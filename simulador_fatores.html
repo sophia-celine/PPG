@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Simulador Interativo de PPG</title>
+<style>
+body { margin:0; font-family: 'Segoe UI', sans-serif; background:#0b1020; color:#e2e8f0; }
+.header { padding:16px; background:#141a33; text-align:center; }
+.header h1 { margin:0; color:#67e8f9; }
+.controls { display:flex; justify-content:center; gap:10px; padding:10px; }
+button { padding:10px 14px; border:none; border-radius:8px; cursor:pointer; background:#334155; color:white; }
+button.active { background:#22d3ee; color:black; }
+.container { display:flex; }
+.left { width:40%; padding:20px; }
+.right { width:60%; padding:20px; position:relative; }
+canvas { background:#050a18; border:2px solid #334155; border-radius:12px; }
+.slider { width:100%; margin-top:10px; }
+.title { font-weight:bold; margin-top:10px; }
+.advance-btn {
+  display: block;
+  margin: 20px 0px 0px 600px;
+  background:#22d3ee;
+  color:black;
+  font-weight:bold;
+  padding:14px 20px;
+  border-radius:12px;
+  box-shadow:0 0 20px rgba(34,211,238,0.6);
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Simulador de Fotopletismografia (PPG)</h1>
+</div>
+
+<div class="controls">
+  <button id="btn-pele" onclick="setMode('pele')" class="active">Cor da pele</button>
+  <button id="btn-luz" onclick="setMode('luz')">Iluminação externa</button>
+  <button id="btn-movimento" onclick="setMode('movimento')">Movimento</button>
+  <button id="btn-lambda" onclick="setMode('lambda')">Comprimento de onda</button>
+</div>
+
+<div class="container">
+
+<div class="left">
+  <canvas id="diagram" width="320" height="360"></canvas>
+  <div class="title" id="sliderTitle"></div>
+  <input type="range" id="slider" class="slider" min="0" max="100" value="50" oninput="updateSlider()">
+  <div style="margin-top:10px; color:#94a3b8; font-size:0.85rem;">
+    💡 Arraste a barra lateralmente para observar as mudanças no sinal.
+  </div>
+  <div id="lambdaValue" style="margin-top:10px; font-size:0.9rem;"></div>
+</div>
+
+<div class="right">
+  <canvas id="signal" width="700" height="320"></canvas>
+  <button class="advance-btn">Avançar ➜</button>
+</div>
+
+</div>
+
+<script>
+let mode = 'pele';
+let sliderVal = 0.5;
+
+const slider = document.getElementById('slider');
+const title = document.getElementById('sliderTitle');
+const lambdaText = document.getElementById('lambdaValue');
+
+function updateSlider(){
+  sliderVal = slider.value / 100;
+}
+
+function setMode(m) {
+  mode = m;
+  // Atualiza visualmente qual botão está selecionado
+  document.querySelectorAll('.controls button').forEach(btn => btn.classList.remove('active'));
+  const activeBtn = document.getElementById('btn-' + m);
+  if(activeBtn) activeBtn.classList.add('active');
+  updateText();
+}
+
+function updateText(){
+  if(mode==='pele') title.innerText='Tom de pele';
+  if(mode==='luz') title.innerText='Iluminação externa';
+  if(mode==='movimento') title.innerText='Movimento';
+  if(mode==='lambda') title.innerText='Comprimento de onda';
+}
+
+const sigCanvas = document.getElementById('signal');
+const ctx = sigCanvas.getContext('2d');
+
+const diagCanvas = document.getElementById('diagram');
+const dctx = diagCanvas.getContext('2d');
+
+let t=0;
+
+function getSkinColor(val){
+  let r = 255 - val * 215;
+  let g = 210 - val * 190;
+  let b = 170 - val * 160;
+  return `rgb(${r},${g},${b})`;
+}
+
+function getWavelength(val){
+  return 400 + val*600;
+}
+
+function wavelengthToRGB(wavelength){
+  let R=0,G=0,B=0;
+  if (wavelength>=380 && wavelength<440){R=-(wavelength-440)/(440-380);B=1;}
+  else if (wavelength<490){G=(wavelength-440)/(490-440);B=1;}
+  else if (wavelength<510){G=1;B=-(wavelength-510)/(510-490);}
+  else if (wavelength<580){R=(wavelength-510)/(580-510);G=1;}
+  else if (wavelength<645){R=1;G=-(wavelength-645)/(645-580);}
+  else if (wavelength<=780){R=1;}
+  else {R=0.5; G=0; B=0.3;} // Representação visual para Infravermelho (>780nm)
+  return `rgb(${Math.floor(R*255)},${Math.floor(G*255)},${Math.floor(B*255)})`;
+}
+
+function ppgWave(x,t){
+  let phase = (x + t) * 0.025;
+  // Modelo harmônico baseado no simulador_ppg.html
+  const pulse = Math.sin(phase);
+  const harmonic = 0.35 * Math.sin(2 * phase - 0.5);
+  const dicrotic = 0.12 * Math.sin(3 * phase + 0.9);
+  return (0.75 * pulse + harmonic + dicrotic);
+}
+
+function drawSignal(){
+  ctx.clearRect(0,0,700,320);
+  ctx.beginPath();
+
+  let amp=50;
+  let noise=0;
+  let baseline=0;
+
+  if(mode==='pele') amp = 45 * (1 - sliderVal * 0.5);
+  if(mode==='luz') noise = sliderVal*25;
+  if(mode==='movimento') baseline = sliderVal*60;
+  // Curva de Gauss para um pico mais natural perto de 800nm (infravermelho próximo)
+  if(mode==='lambda') {
+    let wl = getWavelength(sliderVal);
+    amp = 10 + 50 * Math.exp(-Math.pow(wl - 800, 2) / 60000);
+  }
+
+  for(let x=0;x<700;x++){
+    let y = 220 - ppgWave(x,t)*amp;
+    y += (Math.random()-0.5)*noise;
+    y += Math.sin((x+t)*0.01)*baseline;
+
+    if(x===0) ctx.moveTo(x,y);
+    else ctx.lineTo(x,y);
+  }
+
+  ctx.strokeStyle='#22d3ee';
+  ctx.lineWidth=2;
+  ctx.stroke();
+}
+
+function drawDiagram(){
+  dctx.clearRect(0,0,320,360);
+
+  let skinColor = '#f2caa7';
+  if(mode==='pele') skinColor = getSkinColor(sliderVal);
+
+  dctx.fillStyle = skinColor;
+  dctx.beginPath();
+  dctx.roundRect(100,50,120,260,60);
+  dctx.fill();
+
+  // O LED só muda de cor se o modo 'lambda' estiver selecionado
+  let currentWl = 660; // Padrão vermelho
+  if(mode === 'lambda') currentWl = getWavelength(sliderVal);
+  
+  let lightColor = wavelengthToRGB(currentWl);
+
+  dctx.fillStyle=lightColor;
+  dctx.beginPath();
+  dctx.arc(90,180,10,0,Math.PI*2);
+  dctx.fill();
+
+  dctx.fillStyle='lime';
+  dctx.beginPath();
+  dctx.arc(230,180,10,0,Math.PI*2);
+  dctx.fill();
+
+  dctx.strokeStyle=lightColor;
+  dctx.beginPath();
+  dctx.moveTo(90,180);
+  dctx.lineTo(230,180);
+  dctx.stroke();
+
+  if(mode==='lambda'){
+    // Representação da penetração da luz: comprimentos maiores penetram mais
+    // 400nm (azul) penetra pouco, 1000nm (infravermelho) atravessa o tecido
+    let penetrationScale = 0.15 + (sliderVal * 0.8); 
+    let pWidth = 120 * penetrationScale;
+
+    let grad = dctx.createLinearGradient(100, 180, 100 + pWidth, 180);
+    grad.addColorStop(0, lightColor);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+
+    dctx.fillStyle = grad;
+    dctx.fillRect(100, 175, pWidth, 10);
+
+    lambdaText.innerText = Math.round(currentWl) + ' nm';
+    lambdaText.style.color = lightColor;
+  } else {
+    lambdaText.innerText = '';
+  }
+
+  dctx.fillStyle='white';
+  dctx.font='12px Arial';
+  dctx.fillText('LED',70,160);
+  dctx.fillText('Detector',210,160);
+}
+
+function loop(){
+  t+=2;
+  drawSignal();
+  drawDiagram();
+  requestAnimationFrame(loop);
+}
+
+updateText();
+updateSlider();
+loop();
+</script>
+
+</body>
+</html>
