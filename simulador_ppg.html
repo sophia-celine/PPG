@@ -154,11 +154,6 @@
       <input type="range" id="rngHr" min="40" max="150" value="75" />
     </div>
 
-    <div class="control-group">
-      <label>Ruído / movimento</label>
-      <input type="range" id="rngNoise" min="0" max="20" value="2" />
-    </div>
-
     <div class="btn-row">
       <button class="btn-primary" id="btnFreezeToggle" style="width:100%">PARAR (STOP)</button>
     </div>
@@ -189,7 +184,6 @@
 
     const rngSpo2 = document.getElementById('rngSpo2');
     const rngHr = document.getElementById('rngHr');
-    const rngNoise = document.getElementById('rngNoise');
 
     const lblSpo2 = document.getElementById('lblSpo2');
     const lblHr = document.getElementById('lblHr');
@@ -239,7 +233,6 @@
     // Calcula AC/DC baseado na Física simulada
     function getSimulationParams() {
       const hr = v(rngHr.value);
-      const noise = v(rngNoise.value) / 100;
       const spo2 = v(rngSpo2.value) / 100; // Converte 0-100 para 0.0-1.0
 
       // 1. Calcular parâmetros do Infravermelho (Canal 2)
@@ -265,12 +258,11 @@
       return { 
         hr, 
         dcRed: dcRed, acRed: acRed, 
-        dcIr: dcIr, acIr: acIr, 
-        noise 
+        dcIr: dcIr, acIr: acIr
       };
     }
 
-    function generateWaveSamples(dc, ac, hr, noise, phaseShift = 0) {
+    function generateWaveSamples(dc, ac, hr, phaseShift = 0) {
       const points = [];
       const f = hr / 60;
       // 6 segundos de amostra
@@ -281,10 +273,7 @@
         const harmonic = 0.35 * Math.sin(4 * Math.PI * f * t + phaseShift - 0.5);
         const dicrotic = 0.12 * Math.sin(6 * Math.PI * f * t + phaseShift + 0.9);
         
-        const motion = 0.5 * noise * Math.sin(2 * Math.PI * 0.35 * t + 1.2);
-        const randomish = noise * (Math.sin(18.7 * t) + Math.sin(11.3 * t + 0.8)) * 0.12;
-        
-        const y = dc + ac * (0.75 * pulse + harmonic + dicrotic) + motion + randomish;
+        const y = dc + ac * (0.75 * pulse + harmonic + dicrotic);
         points.push(y);
       }
       return points;
@@ -392,11 +381,11 @@
     }
 
     function draw() {
-      const { hr, dcRed, acRed, dcIr, acIr, noise } = getSimulationParams();
+      const { hr, dcRed, acRed, dcIr, acIr } = getSimulationParams();
       
       if (!isFrozen) {
-        frozenRed = generateWaveSamples(dcRed, acRed, hr, noise, 0);
-        frozenIr = generateWaveSamples(dcIr, acIr, hr, noise, 0.25);
+        frozenRed = generateWaveSamples(dcRed, acRed, hr, 0);
+        frozenIr = generateWaveSamples(dcIr, acIr, hr, 0.25);
       }
 
       // Auto-Scale Logic
@@ -433,7 +422,7 @@
       requestAnimationFrame(animate);
     }
 
-    [rngHr, rngSpo2, rngNoise].forEach(el => {
+    [rngHr, rngSpo2].forEach(el => {
       el.addEventListener('input', updateLabels);
     });
 
