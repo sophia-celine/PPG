@@ -193,6 +193,17 @@
     .res-val { font-size: 3.5rem; font-weight: 800; margin: 10px 0; background: linear-gradient(135deg, #22d3ee 0%, #818cf8 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 2px 10px rgba(34, 211, 238, 0.2); }
     .res-desc { font-family: 'Consolas', monospace; color: #cbd5e1; font-size: 1rem; }
 
+    .target-badge {
+      margin-top: 15px;
+      padding: 12px;
+      background: rgba(252, 211, 77, 0.1);
+      border: 1px dashed #fcd34d;
+      border-radius: 8px;
+      color: #fcd34d;
+      font-size: 1.1rem;
+      font-weight: 800;
+    }
+
     @media (max-width: 1100px) {
       body { flex-direction: column; }
       .sidebar { width: 100%; border-right: none; border-bottom: 1px solid #2a3140; }
@@ -258,7 +269,7 @@
     </section>
 
     <section class="panel">
-      <h2>Parte 2 — Calibração didática da saturação</h2>
+      <h2>Parte 2 — Calibração de calibração da saturação</h2>
       <div class="hint" style="margin-bottom:15px;">
         Insira o valor da razão <b>R</b> obtido visualmente para estimar a saturação final.
       </div>
@@ -266,23 +277,30 @@
       <div class="calc-container">
         <div class="calc-box">
           <div class="formula-badge" id="formulaSpo2">
-            <div style="font-size:0.85em; opacity:0.7; margin-bottom:4px;">Fórmula Didática</div>
-            <div style="font-size:1.3em; color:white;">SpO₂ = 108 - 35·R</div>
+            <div style="font-size:0.85em; opacity:0.7; margin-bottom:4px;">Fórmula de calibração</div>
+            <div style="font-size:1.3em; color:white;" id="formulaText">SpO₂ = A - B·R</div>
           </div>
           
           <div class="calc-input-row">
             <div class="input-grp">
+              <label for="inputA">Constante A</label>
+              <input id="inputA" type="number" step="0.5" value="108" />
+            </div>
+            <div class="input-grp">
+              <label for="inputB">Constante B</label>
+              <input id="inputB" type="number" step="0.5" value="35" />
+            </div>
+            <div class="input-grp">
               <label for="inputR">Razão R (calculada)</label>
               <input id="inputR" type="number" step="0.01" value="0.50" placeholder="0.00" />
             </div>
-            <button class="btn-calc" id="btnCalcSpo2">Calcular</button>
           </div>
         </div>
 
         <div class="calc-box result-card">
           <div class="res-desc" id="resultSpo2">Aguardando cálculo...</div>
           <div class="res-val" id="bigSpo2">--%</div>
-          <div class="small" style="color:#64748b;">Calibrado para 660nm / 940nm</div>
+          <div id="targetDisplay" class="target-badge">Saturação Alvo: --%</div>
         </div>
       </div>
     </section>
@@ -307,10 +325,13 @@
     const dotIr = document.getElementById('dotIr');
 
     const formulaSpo2 = document.getElementById('formulaSpo2');
+    const formulaText = document.getElementById('formulaText');
+    const inputA = document.getElementById('inputA');
+    const inputB = document.getElementById('inputB');
     const resultSpo2 = document.getElementById('resultSpo2');
     const bigSpo2 = document.getElementById('bigSpo2');
+    const targetDisplay = document.getElementById('targetDisplay');
     const inputR = document.getElementById('inputR');
-    const btnCalcSpo2 = document.getElementById('btnCalcSpo2');
     const btnFreezeToggle = document.getElementById('btnFreezeToggle');
 
     let time = 0;
@@ -443,30 +464,24 @@
     }
 
     function updateCalculatedValues() {
-      // Apenas a parte da calculadora manual do aluno
+      const A = Number(inputA.value);
+      const B = Number(inputB.value);
       const currentRInput = Number(inputR.value);
-      const rawSpo2 = 108 - 35 * currentRInput;
+      
+      const rawSpo2 = A - B * currentRInput;
       const spo2 = Math.max(50, Math.min(100, rawSpo2));
 
-      // Verifica se a saturação calculada a partir do R informado está dentro da margem de tolerância
-      const targetSpo2 = hiddenSpo2 * 100;
-      // Aceita resultados entre target-0.4 e target+0.5 (ex: 97.6 a 98.5 para alvo de 98.0)
-      const isCorrect = (rawSpo2 >= targetSpo2 - 0.4) && (rawSpo2 <= targetSpo2 + 0.5);
+      formulaText.textContent = `SpO₂ = ${A} - ${B}·R`;
 
-      if (isCorrect) {
-        inputR.style.borderColor = "#4ade80"; // Verde neon
-        inputR.style.boxShadow = "0 0 12px rgba(74, 222, 128, 0.5)";
-      } else {
-        inputR.style.borderColor = "#f87171"; // Vermelho suave
-        inputR.style.boxShadow = "0 0 12px rgba(248, 113, 113, 0.4)";
-      }
+      const targetSpo2 = hiddenSpo2 * 100;
 
       bigSpo2.textContent = `${fmt(spo2, 1)}%`;
+      targetDisplay.textContent = `Saturação Alvo: ${fmt(targetSpo2, 0)}%`;
       
       resultSpo2.innerHTML =
-        `R informado = <b>${fmt(currentRInput,2)}</b>` +
+        `Cálculo: ${A} - (${B} × ${fmt(currentRInput,2)})` +
         `<br><br>` +
-        `SpO₂ = 108 - 35·${fmt(currentRInput,2)} = <b>${fmt(spo2,1)}%</b>`;
+        `Resultado = <b>${fmt(spo2,1)}%</b>`;
     }
 
     function generateWaveSamples(dc, ac, hr, phaseShift = 0) {
@@ -652,13 +667,9 @@
       btnFreezeToggle.classList.toggle('btn-primary');
     });
 
-    btnCalcSpo2.addEventListener('click', () => {
+    [inputA, inputB, inputR].forEach(inp => inp.addEventListener('input', () => {
       updateCalculatedValues();
-    });
-
-    inputR.addEventListener('input', () => {
-      updateCalculatedValues();
-    });
+    }));
 
     updateLabels();
     updateCalculatedValues();
