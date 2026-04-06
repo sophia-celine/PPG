@@ -223,17 +223,14 @@
 
     <div class="control-group">
       <label>Frequência cardíaca <span class="val" id="lblHr">60 bpm</span></label>
-      <input type="range" id="rngHr" min="40" max="150" value="75" />
     </div>
 
     <div class="control-group">
       <label>Comp. de onda LED 1 <span class="val" id="lblWlRed">660 nm</span></label>
-      <input type="range" id="rngWlRed" min="380" max="1050" value="660" />
     </div>
 
     <div class="control-group">
       <label>Comp. de onda LED 2 <span class="val" id="lblWlIr">940 nm</span></label>
-      <input type="range" id="rngWlIr" min="380" max="1050" value="940" />
     </div>
 
     <div class="btn-row">
@@ -293,9 +290,6 @@
     const ctx = waveCanvas.getContext('2d');
 
     const selPreset = document.getElementById('selPreset');
-    const rngHr = document.getElementById('rngHr');
-    const rngWlRed = document.getElementById('rngWlRed');
-    const rngWlIr = document.getElementById('rngWlIr');
 
     const lblPreset = document.getElementById('lblPreset');
     const lblHr = document.getElementById('lblHr');
@@ -319,6 +313,9 @@
     let frozenIr = [];
     
     let hiddenSpo2 = 0.98; // Valor padrão inicial (98%)
+    let currentHr = 75; 
+    const WL_RED = 660; // Fixo no Vermelho
+    const WL_IR = 940;  // Fixo no Infravermelho
     let colorRed = '#ef4444';
     let colorIr = '#8b5cf6';
 
@@ -326,15 +323,15 @@
     function fmt(num, dec=2) { return Number(num).toFixed(dec); }
 
     function updateLabels() {
-      lblHr.textContent = `${rngHr.value} bpm`;
+      lblHr.textContent = `${currentHr} bpm`;
       lblPreset.textContent = selPreset.options[selPreset.selectedIndex].text;
-      lblWlRed.textContent = `${rngWlRed.value} nm`;
-      lblWlIr.textContent = `${rngWlIr.value} nm`;
-      legWlRed.textContent = rngWlRed.value;
-      legWlIr.textContent = rngWlIr.value;
+      lblWlRed.textContent = `${WL_RED} nm`;
+      lblWlIr.textContent = `${WL_IR} nm`;
+      legWlRed.textContent = WL_RED;
+      legWlIr.textContent = WL_IR;
       
-      colorRed = nmToRGB(v(rngWlRed.value));
-      colorIr = nmToRGB(v(rngWlIr.value));
+      colorRed = nmToRGB(WL_RED);
+      colorIr = nmToRGB(WL_IR);
       
       dotRed.style.backgroundColor = colorRed;
       dotIr.style.backgroundColor = colorIr;
@@ -344,16 +341,16 @@
       const p = selPreset.value;
       if (p === 'A') {
         hiddenSpo2 = 0.98;
-        rngHr.value = 75;
+        currentHr = 75; // Normal
       } else if (p === 'B') {
         hiddenSpo2 = 0.92;
-        rngHr.value = 85;
+        currentHr = 82; // Leve taquicardia compensatória
       } else if (p === 'C') {
         hiddenSpo2 = 0.85;
-        rngHr.value = 100;
+        currentHr = 105; // Hipóxia moderada
       } else if (p === 'D') {
         hiddenSpo2 = 0.70;
-        rngHr.value = 110;
+        currentHr = 130; // Hipóxia severa / Choque
       }
       updateLabels();
       updateCalculatedValues();
@@ -361,6 +358,9 @@
 
     // Retorna cor CSS baseada no comprimento de onda
     function nmToRGB(wavelength) {
+      // Se for IR (acima de 780), usamos uma cor roxa/fúcsia para representação visual
+      if (wavelength > 780) return "#d946ef"; 
+
       let r, g, b, alpha = 1;
       if (wavelength >= 380 && wavelength < 440) { r = -1 * (wavelength - 440) / (440 - 380); g = 0; b = 1; }
       else if (wavelength >= 440 && wavelength < 490) { r = 0; g = (wavelength - 440) / (490 - 440); b = 1; }
@@ -374,9 +374,6 @@
       let factor = 1;
       if (wavelength > 700) factor = 0.3 + 0.7 * (780 - wavelength) / (780 - 700);
       if (wavelength < 420) factor = 0.3 + 0.7 * (wavelength - 380) / (420 - 380);
-      
-      // Se for IR (acima de 780), vamos dar uma cor roxa/fúcsia para representação visual
-      if (wavelength > 780) return "#d946ef"; 
 
       const R = Math.round(r * factor * 255);
       const G = Math.round(g * factor * 255);
@@ -409,10 +406,10 @@
 
     // Calcula AC/DC baseado na Física simulada (SpO2 e Wavelength)
     function getSimulationParams() {
-      const hr = v(rngHr.value);
+      const hr = currentHr;
       const spo2 = hiddenSpo2; // Usa a variável interna oculta
-      const wlRed = v(rngWlRed.value);
-      const wlIr = v(rngWlIr.value);
+      const wlRed = WL_RED;
+      const wlIr = WL_IR;
 
       // 1. Calcular parâmetros do Infravermelho (Canal 2)
       const { hb: hbIr, hbo2: hbo2Ir } = getExtinction(wlIr);
@@ -634,14 +631,6 @@
       draw();
       requestAnimationFrame(animate);
     }
-
-    [rngHr, rngWlRed, rngWlIr].forEach(el => {
-      el.addEventListener('input', () => {
-        // Se o usuário mexer nos controles manuais, não mudamos o preset de SpO2,
-        // apenas os outros parâmetros.
-        updateLabels();
-      });
-    });
 
     selPreset.addEventListener('change', applyPreset);
 
