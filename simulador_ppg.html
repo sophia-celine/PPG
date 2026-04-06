@@ -1,4 +1,7 @@
-<!-- c:\Users\Sophia\Documents\PPG\simulador_spo_2_fixed.html -->
+
+<!-- Este arquivo é um simulador básico de PPG com controle manual de SpO2 e frequência cardíaca para observação do sinal. 
+  Autoria: Sophia Celine -->
+  
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -170,8 +173,8 @@
       <div>
         <h2>Osciloscópio (Fotodetector)</h2>
         <div class="legend">
-          <span><span class="dot red-dot"></span>Canal 1 (660 nm)</span>
-          <span><span class="dot ir-dot"></span>Canal 2 (940 nm)</span>
+          <span><span class="dot red-dot"></span>Canal 1 (<span id="legWlRed">--</span> nm)</span>
+          <span><span class="dot ir-dot"></span>Canal 2 (<span id="legWlIr">--</span> nm)</span>
         </div>
       </div>
       <canvas id="waveCanvas" width="1100" height="400"></canvas>
@@ -207,6 +210,8 @@
     function updateLabels() {
       lblHr.textContent = `${rngHr.value} bpm`;
       lblSpo2.textContent = `${rngSpo2.value}%`;
+      document.getElementById('legWlRed').textContent = wlRed;
+      document.getElementById('legWlIr').textContent = wlIr;
     }
 
     // Tabela simplificada de coeficientes de extinção
