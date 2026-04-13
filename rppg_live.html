@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>rPPG CHROM Live</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            background: #0f0f0f; 
+            color: #e0e0e0; 
+            margin: 0; 
+            padding: 20px; 
+        }
+        h1 { margin-bottom: 10px; font-weight: 300; }
+        .container { 
+            position: relative; 
+            width: 100%; 
+            max-width: 640px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border-radius: 12px;
+            overflow: hidden;
+            background: #000;
+        }
+        video { display: none; }
+        canvas { display: block; width: 100%; }
+        #graphCanvas { 
+            height: 150px; 
+            margin-top: 15px; 
+            border-top: 1px solid #333;
+            background: #1a1a1a;
+        }
+        .controls { margin: 20px; }
+        button { 
+            padding: 12px 30px; 
+            font-size: 16px; 
+            cursor: pointer; 
+            border: none; 
+            border-radius: 25px; 
+            background: #25d366; 
+            color: white; 
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+        button:active { transform: scale(0.95); }
+        button:disabled { background: #444; cursor: not-allowed; }
+        .info { font-size: 14px; color: #888; margin-bottom: 10px; }
+        select { 
+            padding: 12px 20px; 
+            font-size: 16px; 
+            border-radius: 25px; 
+            background: #333; 
+            color: white; 
+            border: 1px solid #444; 
+            margin-right: 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Monitor de Pulso rPPG</h1>
+    <div class="info" id="status">Acesse a câmera para iniciar a extração</div>
+    
+    <div class="container">
+        <video id="video" playsinline></video>
+        <canvas id="displayCanvas"></canvas>
+        <canvas id="graphCanvas"></canvas>
+    </div>
+
+    <div class="controls">
+        <select id="methodSelect">
+            <option value="CHROM">Método CHROM</option>
+            <option value="POS">Método POS</option>
+        </select>
+        <button id="startBtn">Iniciar Captura</button>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const displayCanvas = document.getElementById('displayCanvas');
+        const graphCanvas = document.getElementById('graphCanvas');
+        const startBtn = document.getElementById('startBtn');
+        const methodSelect = document.getElementById('methodSelect');
+        const status = document.getElementById('status');
+
+        const displayCtx = displayCanvas.getContext('2d', { alpha: false });
+        const graphCtx = graphCanvas.getContext('2d');
+
+        // Configurações rPPG (Baseado em De Haan 2013)
+        const winSec = 1.6;
+        let rgbBuffer = [];
+        let bvpHistory = [];
+        let isRunning = false;
+
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, 
+                    audio: false 
+                });
+                video.srcObject = stream;
+                await video.play();
+                startBtn.disabled = true;
+                isRunning = true;
+                requestAnimationFrame(processFrame);
+            } catch (err) {
+                status.innerText = "Erro: " + err.message;
+                console.error(err);
+            }
+        }
+
+        function getMeanRGB(ctx, x, y, w, h) {
+            const imageData = ctx.getImageData(x, y, w, h);
+            const data = imageData.data;
+            let r = 0, g = 0, b = 0;
+            for (let i = 0; i < data.length; i += 4) {
+                r += data[i];
+                g += data[i + 1];
+                b += data[i + 2];
+            }
+            const count = data.length / 4;
+            return [r / count, g / count, b / count];
+        }
+
+        function applyChrom(buffer) {
+            const n = buffer.length;
+            if (n < 15) return 0;
+
+            // Normalização por média do buffer
+            let sR = 0, sG = 0, sB = 0;
+            for(let i=0; i<n; i++) { sR += buffer[i][0]; sG += buffer[i][1]; sB += buffer[i][2]; }
+            const mR = sR/n, mG = sG/n, mB = sB/n;
+
+            let X = [], Y = [];
+            for (let i = 0; i < n; i++) {
+                const Rn = buffer[i][0] / mR;
+                const Gn = buffer[i][1] / mG;
+                const Bn = buffer[i][2] / mB;
+                // De Haan 2013 Projections: Xs = 3Rn - 2Gn; Ys = 1.5Rn + Gn - 1.5Bn
+                X.push(3 * Rn - 2 * Gn);
+                Y.push(1.5 * Rn + Gn - 1.5 * Bn);
+            }
+
+            const detrend = (a) => {
+                const avg = a.reduce((p, c) => p + c, 0) / a.length;
+                return a.map(v => v - avg);
+            };
+            const Xf = detrend(X);
+            const Yf = detrend(Y);
+
+            const std = (a) => Math.sqrt(a.reduce((p, c) => p + c*c, 0) / a.length);
+            const alpha = std(Xf) / (std(Yf) + 0.0001);
+            
+            return Xf[n - 1] - alpha * Yf[n - 1];
+        }
+
+        function applyPos(buffer) {
+            const n = buffer.length;
+            if (n < 15) return 0;
+
+            // 1. Normalização Temporal (Cn)
+            let sR = 0, sG = 0, sB = 0;
+            for(let i=0; i<n; i++) { sR += buffer[i][0]; sG += buffer[i][1]; sB += buffer[i][2]; }
+            const mR = sR/n, mG = sG/n, mB = sB/n;
+
+            let S1 = [], S2 = [];
+            for (let i = 0; i < n; i++) {
+                const Rn = buffer[i][0] / mR;
+                const Gn = buffer[i][1] / mG;
+                const Bn = buffer[i][2] / mB;
+                
+                // Projeções POS: S = [[0, 1, -1], [-2, 1, 1]] * Cn
+                S1.push(Gn - Bn);
+                S2.push(-2 * Rn + Gn + Bn);
+            }
+
+            const std = (arr) => {
+                const mu = arr.reduce((a, b) => a + b, 0) / arr.length;
+                return Math.sqrt(arr.map(x => Math.pow(x - mu, 2)).reduce((a, b) => a + b, 0) / arr.length);
+            };
+            
+            const alpha = std(S1) / (std(S2) + 0.0001);
+            return S1[n - 1] + alpha * S2[n - 1];
+        }
+
+        function processFrame() {
+            if (!isRunning) return;
+            
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                if (displayCanvas.width !== video.videoWidth) {
+                    displayCanvas.width = video.videoWidth;
+                    displayCanvas.height = video.videoHeight;
+                    graphCanvas.width = displayCanvas.width;
+                }
+
+                displayCtx.drawImage(video, 0, 0);
+
+                const rw = 80, rh = 80;
+                const rx = (displayCanvas.width - rw) / 2;
+                const ry = (displayCanvas.height - rh) / 2 - 40; // ROI na região da testa
+
+                const currentRGB = getMeanRGB(displayCtx, rx, ry, rw, rh);
+                rgbBuffer.push(currentRGB);
+                if (rgbBuffer.length > 60) rgbBuffer.shift(); // ~2 segundos de buffer
+
+                const method = methodSelect.value;
+                const bvp = (method === 'CHROM') ? applyChrom(rgbBuffer) : applyPos(rgbBuffer);
+
+                bvpHistory.push(bvp);
+                if (bvpHistory.length > displayCanvas.width) bvpHistory.shift();
+
+                // Feedback Visual: Overlay Vermelho Pulsante na ROI
+                const pulse = Math.max(0, Math.min(1, (bvp + 0.015) * 30));
+                displayCtx.lineWidth = 3;
+                displayCtx.strokeStyle = '#25d366';
+                displayCtx.strokeRect(rx, ry, rw, rh);
+                displayCtx.fillStyle = `rgba(255, 0, 0, ${pulse * 0.4})`;
+                displayCtx.fillRect(rx, ry, rw, rh);
+
+                // Desenho do Gráfico da Onda rPPG
+                graphCtx.fillStyle = '#1a1a1a';
+                graphCtx.fillRect(0, 0, graphCanvas.width, graphCanvas.height);
+                graphCtx.beginPath();
+                graphCtx.strokeStyle = '#25d366';
+                graphCtx.lineWidth = 2;
+                
+                const min = Math.min(...bvpHistory), max = Math.max(...bvpHistory);
+                const range = (max - min) || 1;
+                for (let i = 0; i < bvpHistory.length; i++) {
+                    const x = i;
+                    const y = 150 - ((bvpHistory[i] - min) / range * 110 + 20);
+                    if (i === 0) graphCtx.moveTo(x, y);
+                    else graphCtx.lineTo(x, y);
+                }
+                graphCtx.stroke();
+
+                status.innerText = `Extraindo sinal ${method} (Mantenha o rosto imóvel)`;
+            }
+            requestAnimationFrame(processFrame);
+        }
+
+        startBtn.addEventListener('click', startCamera);
+    </script>
+</body>
+</html>
