@@ -8,3 +8,4 @@
 
 [Simulador de calibração para oximetria](https://sophia-celine.github.io/PPG/simulador_Spo2_calibration.html)
 
+[Extração de sinais de fotopletismografia remota](https://sophia-celine.github.io/PPG/rppg_live.html)
