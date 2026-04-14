@@ -61,7 +61,7 @@
     </style>
 </head>
 <body>
-    <h1>Monitor de Pulso rPPG</h1>
+    <h1>Extração de sinais de rPPG</h1>
     <div class="info" id="status">Acesse a câmera para iniciar a extração</div>
     
     <div class="container">
@@ -94,21 +94,38 @@
         let rgbBuffer = [];
         let bvpHistory = [];
         let isRunning = false;
+        let localStream = null;
 
-        async function startCamera() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, 
-                    audio: false 
-                });
-                video.srcObject = stream;
-                await video.play();
-                startBtn.disabled = true;
-                isRunning = true;
-                requestAnimationFrame(processFrame);
-            } catch (err) {
-                status.innerText = "Erro: " + err.message;
-                console.error(err);
+        async function toggleCapture() {
+            if (!isRunning) {
+                // Reinicia os buffers ao começar uma nova captura
+                rgbBuffer = [];
+                bvpHistory = [];
+                
+                try {
+                    localStream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, 
+                        audio: false 
+                    });
+                    video.srcObject = localStream;
+                    await video.play();
+                    isRunning = true;
+                    startBtn.innerText = "Parar Captura";
+                    startBtn.style.background = "#ef4444"; // Muda para vermelho
+                    requestAnimationFrame(processFrame);
+                } catch (err) {
+                    status.innerText = "Erro: " + err.message;
+                    console.error(err);
+                }
+            } else {
+                isRunning = false;
+                if (localStream) {
+                    localStream.getTracks().forEach(track => track.stop());
+                }
+                video.srcObject = null;
+                startBtn.innerText = "Iniciar Captura";
+                startBtn.style.background = "#25d366"; // Volta para verde
+                status.innerText = "Captura interrompida. Gráfico congelado.";
             }
         }
 
@@ -242,7 +259,7 @@
             requestAnimationFrame(processFrame);
         }
 
-        startBtn.addEventListener('click', startCamera);
+        startBtn.addEventListener('click', toggleCapture);
     </script>
 </body>
 </html>
