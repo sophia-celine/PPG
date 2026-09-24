@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -408,26 +407,14 @@ const HIGH_CUTOFF = 3.3;
 // MOTION PARAMETERS
 // ============================================================
 
-// Minimum landmark displacement considered as actual movement.
-//
-// 0.015 = 1.5% of the face width.
 const LANDMARK_MOVEMENT_THRESHOLD = 0.015;
 
-
-// Average displacement corresponding to maximum
-// distance contribution to the motion index.
-//
-// 0.08 = 8% of face width.
 const BRUSQUE_MOVEMENT_DISTANCE = 0.08;
 
-
-// Weights of the two motion components.
 const MOVEMENT_PERCENTAGE_WEIGHT = 0.50;
 
 const MOVEMENT_DISTANCE_WEIGHT = 0.50;
 
-
-// Above this value, the new HR estimate is rejected.
 const MOTION_REJECTION_THRESHOLD = 0.75;
 
 
@@ -450,9 +437,6 @@ let lastTimestamp = -1;
 // RGB BUFFER
 // ============================================================
 
-// 60 samples ≈ 2 seconds at 30 fps.
-//
-// This preserves the original CHROM/POS implementation.
 const RGB_BUFFER_LENGTH = 60;
 
 const rgbBuffer = [];
@@ -868,7 +852,6 @@ function calculateFrameMotion(
             faceWidth;
 
 
-        // Ignore very small tracking variations.
         if (
             normalizedDisplacement >=
             LANDMARK_MOVEMENT_THRESHOLD
@@ -1092,6 +1075,41 @@ function pointInPolygon(
 
 
 // ============================================================
+// HELPER: EXPANDED MOUTH POLYGON
+// ============================================================
+
+function makeExpandedMouthPolygon(
+    landmarks,
+    indices,
+    width,
+    height,
+    scaleFactor = 1.4
+) {
+
+    const points = indices.map(index => ({
+        x: landmarks[index].x * width,
+        y: landmarks[index].y * height
+    }));
+
+    let cx = 0;
+    let cy = 0;
+
+    for (const p of points) {
+        cx += p.x;
+        cy += p.y;
+    }
+
+    cx /= points.length;
+    cy /= points.length;
+
+    return points.map(p => ({
+        x: cx + (p.x - cx) * scaleFactor,
+        y: cy + (p.y - cy) * scaleFactor
+    }));
+}
+
+
+// ============================================================
 // ROI RGB
 // ============================================================
 
@@ -1140,31 +1158,19 @@ function getMeanRGBFromMask(
 
 
     const leftEyeIndices = [
-
-        33, 7, 163, 144,
-        145, 153, 154, 155,
-        133, 173, 157, 158,
-        159, 160, 161, 246
+        70, 63, 105, 66, 107, 133, 155, 154, 153, 145, 144, 163, 7, 33
     ];
 
 
     const rightEyeIndices = [
-
-        362, 382, 381, 380,
-        374, 373, 390, 249,
-        263, 466, 388, 387,
-        386, 385, 384, 398
+        336, 296, 334, 293, 300, 263, 249, 390, 373, 374, 380, 381, 382, 362
     ];
 
 
+    // Sequência completa dos lábios superiores e inferiores (FACEMESH_OUTER_LIPS)
     const mouthIndices = [
-
-        61, 146, 91, 181,
-        84, 17, 314, 405,
-        321, 375, 291, 308,
-        324, 318, 402, 317,
-        14, 87, 178, 88,
-        95, 78
+        61, 185, 40, 39, 37, 0, 267, 269, 270, 409,
+        291, 375, 321, 405, 314, 17, 84, 181, 91, 146
     ];
 
 
@@ -1205,9 +1211,14 @@ function getMeanRGBFromMask(
         );
 
 
+    // Boca inteira expandida com margem de segurança ao redor dos dois lábios
     const mouthPolygon =
-        makePolygon(
-            mouthIndices
+        makeExpandedMouthPolygon(
+            landmarks,
+            mouthIndices,
+            width,
+            height,
+            1.40
         );
 
 
@@ -1391,9 +1402,6 @@ function getMeanRGBFromMask(
 // ============================================================
 // CHROM
 // ============================================================
-//
-// Original logic preserved.
-//
 
 function applyChrom(
     buffer
@@ -1544,9 +1552,6 @@ function applyChrom(
 // ============================================================
 // POS
 // ============================================================
-//
-// Original logic preserved.
-//
 
 function applyPos(
     buffer
@@ -1702,11 +1707,6 @@ function filterButterworth3rdOrder(
         return signal.slice();
     }
 
-
-    // Approximately 30 fps.
-    //
-    // These coefficients are kept from the previous
-    // implementation.
 
     const hpB = [
 
@@ -1951,18 +1951,6 @@ function detrendSignal(
 // ============================================================
 // PREPROCESSING
 // ============================================================
-//
-// This function generates the exact signal used for HR
-// spectral estimation:
-//
-// raw
-//   ↓
-// detrend
-//   ↓
-// Butterworth 0.3–3.3 Hz
-//   ↓
-// filtered
-//
 
 function preprocessSignal(
     signal,
@@ -1981,6 +1969,40 @@ function preprocessSignal(
 
         fps
     );
+}
+
+
+// ============================================================
+// SMOOTH VISUAL SIGNAL (SUAVIZAÇÃO APENAS PARA EXIBIÇÃO)
+// ============================================================
+
+function smoothSignal(
+    signal,
+    windowSize = 5
+) {
+
+    if (signal.length < windowSize) {
+        return signal.slice();
+    }
+
+    const smoothed = new Array(signal.length);
+    const half = Math.floor(windowSize / 2);
+
+    for (let i = 0; i < signal.length; i++) {
+        let sum = 0;
+        let count = 0;
+
+        for (let j = -half; j <= half; j++) {
+            const idx = i + j;
+            if (idx >= 0 && idx < signal.length) {
+                sum += signal[idx];
+                count++;
+            }
+        }
+        smoothed[i] = sum / count;
+    }
+
+    return smoothed;
 }
 
 
@@ -2024,10 +2046,6 @@ function estimateHeartRate(
     }
 
 
-    // IMPORTANT:
-    // This is the same filtered signal that can be displayed
-    // using the "Filtered" graph options.
-
     const filtered =
         preprocessSignal(
             signal,
@@ -2045,7 +2063,6 @@ function estimateHeartRate(
         );
 
 
-    // Zero padding.
     const padded =
         new Array(
             fftSize
@@ -2088,7 +2105,6 @@ function estimateHeartRate(
             fftSize;
 
 
-        // 0.6–3.3 Hz = 36–198 bpm.
         if (
             frequency < 0.6 ||
             frequency > 3.3
@@ -2278,7 +2294,6 @@ function performEstimation(
         signalTimeHistory[0];
 
 
-    // First estimate after 15 seconds.
     if (
         elapsed <
         HR_WINDOW_SECONDS
@@ -2301,10 +2316,6 @@ function performEstimation(
         return;
     }
 
-
-    // --------------------------------------------------------
-    // Motion during the last second
-    // --------------------------------------------------------
 
     const motion =
         finishMotionSecond();
@@ -2331,10 +2342,6 @@ function performEstimation(
             100
         ).toFixed(0)}%`;
 
-
-    // --------------------------------------------------------
-    // Last 15 seconds
-    // --------------------------------------------------------
 
     const chromWindow =
         getLast15Seconds(
@@ -2367,10 +2374,6 @@ function performEstimation(
         getFrameRate();
 
 
-    // --------------------------------------------------------
-    // New spectral estimates
-    // --------------------------------------------------------
-
     const newChromHR =
         estimateHeartRate(
 
@@ -2388,10 +2391,6 @@ function performEstimation(
             fps
         );
 
-
-    // --------------------------------------------------------
-    // Motion rejection
-    // --------------------------------------------------------
 
     const highMotion =
         currentMotionIndex >=
@@ -2439,16 +2438,11 @@ function performEstimation(
         }
 
 
-        // The graph is still updated.
         drawGraph();
 
         return;
     }
 
-
-    // --------------------------------------------------------
-    // Accept CHROM
-    // --------------------------------------------------------
 
     if (
         newChromHR !== null &&
@@ -2466,10 +2460,6 @@ function performEstimation(
             `${newChromHR.toFixed(1)} bpm`;
     }
 
-
-    // --------------------------------------------------------
-    // Accept POS
-    // --------------------------------------------------------
 
     if (
         newPosHR !== null &&
@@ -2519,20 +2509,6 @@ function performEstimation(
 // ============================================================
 // GRAPH
 // ============================================================
-//
-// Available modes:
-//
-// CHROM Raw
-// CHROM Filtered
-// POS Raw
-// POS Filtered
-//
-// "Raw" = directly from applyChrom/applyPos.
-//
-// "Filtered" = raw → detrend → Butterworth.
-//
-// HR estimation ALWAYS uses the filtered signal.
-//
 
 function drawGraph() {
 
@@ -2581,10 +2557,6 @@ function drawGraph() {
     let filtered;
 
 
-    // --------------------------------------------------------
-    // Select signal
-    // --------------------------------------------------------
-
     switch (
         selectedSignal
     ) {
@@ -2628,10 +2600,6 @@ function drawGraph() {
     }
 
 
-    // --------------------------------------------------------
-    // Last 15 seconds
-    // --------------------------------------------------------
-
     const rawSignal =
         getLast15Seconds(
 
@@ -2648,10 +2616,6 @@ function drawGraph() {
         return;
     }
 
-
-    // --------------------------------------------------------
-    // Filter only when requested.
-    // --------------------------------------------------------
 
     if (
         selectedSignal ===
@@ -2690,9 +2654,9 @@ function drawGraph() {
     }
 
 
-    // --------------------------------------------------------
-    // Graph title
-    // --------------------------------------------------------
+    // Suaviza visualmente o sinal para remoção do aspecto pontiagudo
+    filtered = smoothSignal(filtered, 5);
+
 
     const titles = {
 
@@ -2713,10 +2677,6 @@ function drawGraph() {
     graphTitle.textContent =
         `${titles[selectedSignal]} — last 15 seconds`;
 
-
-    // --------------------------------------------------------
-    // Signal limits
-    // --------------------------------------------------------
 
     let min =
         Infinity;
@@ -2752,10 +2712,6 @@ function drawGraph() {
         return;
     }
 
-
-    // --------------------------------------------------------
-    // Draw signal
-    // --------------------------------------------------------
 
     graphCtx.save();
 
@@ -2891,31 +2847,18 @@ function drawROI(
 
 
     const leftEyeIndices = [
-
-        33, 7, 163, 144,
-        145, 153, 154, 155,
-        133, 173, 157, 158,
-        159, 160, 161, 246
+        70, 63, 105, 66, 107, 133, 155, 154, 153, 145, 144, 163, 7, 33
     ];
 
 
     const rightEyeIndices = [
-
-        362, 382, 381, 380,
-        374, 373, 390, 249,
-        263, 466, 388, 387,
-        386, 385, 384, 398
+        336, 296, 334, 293, 300, 263, 249, 390, 373, 374, 380, 381, 382, 362
     ];
 
 
     const mouthIndices = [
-
-        61, 146, 91, 181,
-        84, 17, 314, 405,
-        321, 375, 291, 308,
-        324, 318, 402, 317,
-        14, 87, 178, 88,
-        95, 78
+        61, 185, 40, 39, 37, 0, 267, 269, 270, 409,
+        291, 375, 321, 405, 314, 17, 84, 181, 91, 146
     ];
 
 
@@ -2957,8 +2900,12 @@ function drawROI(
 
 
     const mouth =
-        polygonFromIndices(
-            mouthIndices
+        makeExpandedMouthPolygon(
+            landmarks,
+            mouthIndices,
+            width,
+            height,
+            1.40
         );
 
 
@@ -3100,10 +3047,6 @@ async function processFrame() {
         performance.now();
 
 
-    // --------------------------------------------------------
-    // Draw camera
-    // --------------------------------------------------------
-
     displayCtx.drawImage(
 
         video,
@@ -3115,10 +3058,6 @@ async function processFrame() {
         displayCanvas.height
     );
 
-
-    // --------------------------------------------------------
-    // Face detection
-    // --------------------------------------------------------
 
     let results = null;
 
@@ -3178,10 +3117,6 @@ async function processFrame() {
             results.faceLandmarks[0];
 
 
-        // ----------------------------------------------------
-        // Motion
-        // ----------------------------------------------------
-
         const frameMotion =
             calculateFrameMotion(
                 landmarks
@@ -3192,10 +3127,6 @@ async function processFrame() {
             frameMotion
         );
 
-
-        // ----------------------------------------------------
-        // RGB
-        // ----------------------------------------------------
 
         const rgb =
             getMeanRGBFromMask(
@@ -3225,10 +3156,6 @@ async function processFrame() {
                 rgbBuffer.shift();
             }
 
-
-            // ------------------------------------------------
-            // CHROM / POS
-            // ------------------------------------------------
 
             if (
                 rgbBuffer.length >= 15
@@ -3261,7 +3188,6 @@ async function processFrame() {
                 );
 
 
-                // Keep slightly more than 15 seconds.
                 const maxHistory =
                     Math.ceil(
 
@@ -3286,9 +3212,9 @@ async function processFrame() {
                 }
 
 
-                // ------------------------------------------------
-                // Estimate once per second
-                // ------------------------------------------------
+                // Atualiza o gráfico continuamente a cada quadro capturado
+                drawGraph();
+
 
                 const currentTime =
                     now / 1000;
@@ -3321,10 +3247,6 @@ async function processFrame() {
         }
 
 
-        // ----------------------------------------------------
-        // ROI
-        // ----------------------------------------------------
-
         if (showROI) {
 
             drawROI(
@@ -3342,10 +3264,6 @@ async function processFrame() {
             "No face detected. Please position your face in the camera view.";
     }
 
-
-    // --------------------------------------------------------
-    // Next frame
-    // --------------------------------------------------------
 
     if (
 
@@ -3422,4 +3340,3 @@ initializeFaceLandmarker()
 
 </body>
 </html>
-
