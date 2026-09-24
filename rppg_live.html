@@ -1,265 +1,3425 @@
+
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>rPPG CHROM Live</title>
+
+    <title>Real-Time rPPG Heart Rate</title>
+
     <style>
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            background: #0f0f0f; 
-            color: #e0e0e0; 
-            margin: 0; 
-            padding: 20px; 
+        * {
+            box-sizing: border-box;
         }
-        h1 { margin-bottom: 10px; font-weight: 300; }
-        .container { 
-            position: relative; 
-            width: 100%; 
-            max-width: 640px; 
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            border-radius: 12px;
-            overflow: hidden;
+
+        body {
+            margin: 0;
+            background: #111;
+            color: #eee;
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: min(1000px, 95vw);
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .camera-container {
+            position: relative;
+            width: 100%;
+            max-width: 900px;
+            margin: auto;
             background: #000;
+            overflow: hidden;
+            border-radius: 10px;
         }
-        video { display: none; }
-        canvas { display: block; width: 100%; }
-        #graphCanvas { 
-            height: 150px; 
-            margin-top: 15px; 
-            border-top: 1px solid #333;
-            background: #1a1a1a;
+
+        #displayCanvas {
+            width: 100%;
+            height: auto;
+            display: block;
         }
-        .controls { margin: 20px; }
-        button { 
-            padding: 12px 30px; 
-            font-size: 16px; 
-            cursor: pointer; 
-            border: none; 
-            border-radius: 25px; 
-            background: #25d366; 
-            color: white; 
-            font-weight: bold;
-            transition: transform 0.2s;
+
+        #video {
+            display: none;
         }
-        button:active { transform: scale(0.95); }
-        button:disabled { background: #444; cursor: not-allowed; }
-        .info { font-size: 14px; color: #888; margin-bottom: 10px; }
-        select { 
-            padding: 12px 20px; 
-            font-size: 16px; 
-            border-radius: 25px; 
-            background: #333; 
-            color: white; 
-            border: 1px solid #444; 
-            margin-right: 10px;
+
+        .warning {
+            position: absolute;
+            top: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(180, 80, 0, 0.85);
+            color: white;
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 14px;
+            text-align: center;
+            z-index: 10;
+            white-space: nowrap;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        button,
+        select {
+            padding: 10px 18px;
+            border: none;
+            border-radius: 6px;
+            background: #333;
+            color: white;
             cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:hover,
+        select:hover {
+            background: #444;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        select {
+            border: 1px solid #555;
+        }
+
+        .results {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .card {
+            background: #1d1d1d;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .card-title {
+            color: #aaa;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+
+        .value {
+            font-size: 26px;
+            font-weight: bold;
+        }
+
+        #status {
+            margin-top: 15px;
+            text-align: center;
+            color: #aaa;
+            min-height: 20px;
+        }
+
+        .graph-title {
+            margin-top: 20px;
+            text-align: center;
+            color: #aaa;
+            font-size: 14px;
+        }
+
+        #graphCanvas {
+            width: 100%;
+            height: 220px;
+            background: #181818;
+            border-radius: 8px;
+            margin-top: 8px;
+        }
+
+        .parameters {
+            margin-top: 15px;
+            font-size: 13px;
+            color: #888;
+            text-align: center;
+            line-height: 1.6;
         }
     </style>
 </head>
+
 <body>
-    <h1>Extração de sinais de rPPG</h1>
-    <div class="info" id="status">Acesse a câmera para iniciar a extração</div>
-    
-    <div class="container">
-        <video id="video" playsinline></video>
+
+<div class="container">
+
+    <h1>Real-Time rPPG Heart Rate Estimation</h1>
+
+
+    <!-- ======================================================
+         CAMERA
+         ====================================================== -->
+
+    <div class="camera-container">
+
+        <video
+            id="video"
+            autoplay
+            playsinline>
+        </video>
+
         <canvas id="displayCanvas"></canvas>
-        <canvas id="graphCanvas"></canvas>
+
+        <div class="warning">
+            Please remain as still as possible while the signal is being analyzed.
+        </div>
+
     </div>
+
+
+    <!-- ======================================================
+         CONTROLS
+         ====================================================== -->
 
     <div class="controls">
-        <select id="methodSelect">
-            <option value="CHROM">Método CHROM</option>
-            <option value="POS">Método POS</option>
+
+        <button id="startButton">
+            Start Capture
+        </button>
+
+        <button
+            id="stopButton"
+            disabled>
+            Stop Capture
+        </button>
+
+        <button id="roiButton">
+            Hide ROI
+        </button>
+
+
+        <label for="signalSelect">
+            Signal:
+        </label>
+
+        <select id="signalSelect">
+
+            <option value="chromRaw">
+                CHROM — Raw
+            </option>
+
+            <option value="chromFiltered">
+                CHROM — Filtered
+            </option>
+
+            <option value="posRaw">
+                POS — Raw
+            </option>
+
+            <option value="posFiltered">
+                POS — Filtered
+            </option>
+
         </select>
-        <button id="startBtn">Iniciar Captura</button>
+
     </div>
 
-    <script>
-        const video = document.getElementById('video');
-        const displayCanvas = document.getElementById('displayCanvas');
-        const graphCanvas = document.getElementById('graphCanvas');
-        const startBtn = document.getElementById('startBtn');
-        const methodSelect = document.getElementById('methodSelect');
-        const status = document.getElementById('status');
 
-        const displayCtx = displayCanvas.getContext('2d', { alpha: false });
-        const graphCtx = graphCanvas.getContext('2d');
+    <!-- ======================================================
+         RESULTS
+         ====================================================== -->
 
-        // Configurações rPPG (Baseado em De Haan 2013)
-        const winSec = 1.6;
-        let rgbBuffer = [];
-        let bvpHistory = [];
-        let isRunning = false;
-        let localStream = null;
+    <div class="results">
 
-        async function toggleCapture() {
-            if (!isRunning) {
-                // Reinicia os buffers ao começar uma nova captura
-                rgbBuffer = [];
-                bvpHistory = [];
-                
-                try {
-                    localStream = await navigator.mediaDevices.getUserMedia({ 
-                        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, 
-                        audio: false 
-                    });
-                    video.srcObject = localStream;
-                    await video.play();
-                    isRunning = true;
-                    startBtn.innerText = "Parar Captura";
-                    startBtn.style.background = "#ef4444"; // Muda para vermelho
-                    requestAnimationFrame(processFrame);
-                } catch (err) {
-                    status.innerText = "Erro: " + err.message;
-                    console.error(err);
+        <div class="card">
+
+            <div class="card-title">
+                CHROM Heart Rate
+            </div>
+
+            <div
+                class="value"
+                id="chromHR">
+                --
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="card-title">
+                POS Heart Rate
+            </div>
+
+            <div
+                class="value"
+                id="posHR">
+                --
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="card-title">
+                Motion Index
+            </div>
+
+            <div
+                class="value"
+                id="motionIndex">
+                --
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="card-title">
+                Moving Landmarks
+            </div>
+
+            <div
+                class="value"
+                id="movingLandmarks">
+                --
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- ======================================================
+         STATUS
+         ====================================================== -->
+
+    <div id="status">
+        Waiting to start camera...
+    </div>
+
+
+    <!-- ======================================================
+         GRAPH
+         ====================================================== -->
+
+    <div
+        class="graph-title"
+        id="graphTitle">
+        CHROM — Raw signal
+    </div>
+
+    <canvas id="graphCanvas"></canvas>
+
+
+    <div class="parameters">
+        HR estimation window: 15 seconds |
+        Update interval: 1 second |
+        Band-pass filter: 0.3–3.3 Hz
+    </div>
+
+</div>
+
+
+<script type="module">
+
+import {
+    FaceLandmarker,
+    FilesetResolver
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs";
+
+
+// ============================================================
+// DOM ELEMENTS
+// ============================================================
+
+const video =
+    document.getElementById("video");
+
+const displayCanvas =
+    document.getElementById("displayCanvas");
+
+const displayCtx =
+    displayCanvas.getContext("2d");
+
+const graphCanvas =
+    document.getElementById("graphCanvas");
+
+const graphCtx =
+    graphCanvas.getContext("2d");
+
+const startButton =
+    document.getElementById("startButton");
+
+const stopButton =
+    document.getElementById("stopButton");
+
+const roiButton =
+    document.getElementById("roiButton");
+
+const signalSelect =
+    document.getElementById("signalSelect");
+
+const graphTitle =
+    document.getElementById("graphTitle");
+
+const chromHRElement =
+    document.getElementById("chromHR");
+
+const posHRElement =
+    document.getElementById("posHR");
+
+const motionIndexElement =
+    document.getElementById("motionIndex");
+
+const movingLandmarksElement =
+    document.getElementById("movingLandmarks");
+
+const statusElement =
+    document.getElementById("status");
+
+
+// ============================================================
+// SIGNAL PARAMETERS
+// ============================================================
+
+const HR_WINDOW_SECONDS = 15;
+
+const ESTIMATION_INTERVAL_SECONDS = 1;
+
+const LOW_CUTOFF = 0.4;
+
+const HIGH_CUTOFF = 3.3;
+
+
+// ============================================================
+// MOTION PARAMETERS
+// ============================================================
+
+// Minimum landmark displacement considered as actual movement.
+//
+// 0.015 = 1.5% of the face width.
+const LANDMARK_MOVEMENT_THRESHOLD = 0.015;
+
+
+// Average displacement corresponding to maximum
+// distance contribution to the motion index.
+//
+// 0.08 = 8% of face width.
+const BRUSQUE_MOVEMENT_DISTANCE = 0.08;
+
+
+// Weights of the two motion components.
+const MOVEMENT_PERCENTAGE_WEIGHT = 0.50;
+
+const MOVEMENT_DISTANCE_WEIGHT = 0.50;
+
+
+// Above this value, the new HR estimate is rejected.
+const MOTION_REJECTION_THRESHOLD = 0.75;
+
+
+// ============================================================
+// STATE
+// ============================================================
+
+let stream = null;
+
+let running = false;
+
+let faceLandmarker = null;
+
+let animationFrameId = null;
+
+let lastTimestamp = -1;
+
+
+// ============================================================
+// RGB BUFFER
+// ============================================================
+
+// 60 samples ≈ 2 seconds at 30 fps.
+//
+// This preserves the original CHROM/POS implementation.
+const RGB_BUFFER_LENGTH = 60;
+
+const rgbBuffer = [];
+
+
+// ============================================================
+// CHROM / POS HISTORY
+// ============================================================
+
+const chromRawHistory = [];
+
+const posRawHistory = [];
+
+const signalTimeHistory = [];
+
+
+// ============================================================
+// HR STATE
+// ============================================================
+
+let lastEstimationTime = null;
+
+let lastChromHR = null;
+
+let lastPosHR = null;
+
+let hasPreviousEstimate = false;
+
+
+// ============================================================
+// MOTION STATE
+// ============================================================
+
+let previousLandmarks = null;
+
+let motionFrameCount = 0;
+
+let motionPercentageSum = 0;
+
+let motionDistanceSum = 0;
+
+let currentMotionIndex = 0;
+
+let currentMovingPercentage = 0;
+
+let currentMeanDistance = 0;
+
+
+// ============================================================
+// ROI STATE
+// ============================================================
+
+let showROI = true;
+
+
+// ============================================================
+// CAMERA
+// ============================================================
+
+async function startCamera() {
+
+    try {
+
+        stream =
+            await navigator.mediaDevices.getUserMedia({
+
+                video: {
+
+                    facingMode: "user",
+
+                    width: {
+                        ideal: 640
+                    },
+
+                    height: {
+                        ideal: 480
+                    }
+                },
+
+                audio: false
+            });
+
+
+        video.srcObject =
+            stream;
+
+
+        await video.play();
+
+
+        displayCanvas.width =
+            video.videoWidth;
+
+        displayCanvas.height =
+            video.videoHeight;
+
+
+        running = true;
+
+
+        startButton.disabled = true;
+
+        stopButton.disabled = false;
+
+
+        resetSignalState();
+
+
+        statusElement.textContent =
+            "Camera active. Waiting for enough data to estimate heart rate...";
+
+
+        processFrame();
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        statusElement.textContent =
+            "Could not access the camera.";
+    }
+}
+
+
+// ============================================================
+// STOP CAMERA
+// ============================================================
+
+function stopCamera() {
+
+    running = false;
+
+
+    if (
+        animationFrameId !== null
+    ) {
+
+        cancelAnimationFrame(
+            animationFrameId
+        );
+
+        animationFrameId = null;
+    }
+
+
+    if (stream) {
+
+        stream
+            .getTracks()
+            .forEach(
+                track => track.stop()
+            );
+
+        stream = null;
+    }
+
+
+    video.srcObject = null;
+
+
+    startButton.disabled = false;
+
+    stopButton.disabled = true;
+
+
+    previousLandmarks = null;
+
+
+    statusElement.textContent =
+        "Capture stopped.";
+}
+
+
+// ============================================================
+// RESET SIGNAL STATE
+// ============================================================
+
+function resetSignalState() {
+
+    rgbBuffer.length = 0;
+
+    chromRawHistory.length = 0;
+
+    posRawHistory.length = 0;
+
+    signalTimeHistory.length = 0;
+
+
+    lastEstimationTime = null;
+
+    lastChromHR = null;
+
+    lastPosHR = null;
+
+    hasPreviousEstimate = false;
+
+
+    previousLandmarks = null;
+
+
+    motionFrameCount = 0;
+
+    motionPercentageSum = 0;
+
+    motionDistanceSum = 0;
+
+
+    currentMotionIndex = 0;
+
+    currentMovingPercentage = 0;
+
+    currentMeanDistance = 0;
+
+
+    chromHRElement.textContent =
+        "--";
+
+    posHRElement.textContent =
+        "--";
+
+    motionIndexElement.textContent =
+        "--";
+
+    movingLandmarksElement.textContent =
+        "--";
+
+
+    graphCtx.clearRect(
+        0,
+        0,
+        graphCanvas.width,
+        graphCanvas.height
+    );
+}
+
+
+// ============================================================
+// MEDIAPIPE FACE LANDMARKER
+// ============================================================
+
+async function initializeFaceLandmarker() {
+
+    const vision =
+        await FilesetResolver.forVisionTasks(
+
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+        );
+
+
+    faceLandmarker =
+        await FaceLandmarker.createFromOptions(
+
+            vision,
+
+            {
+
+                baseOptions: {
+
+                    modelAssetPath:
+                        "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+                },
+
+
+                runningMode:
+                    "VIDEO",
+
+
+                numFaces:
+                    1,
+
+
+                minFaceDetectionConfidence:
+                    0.5,
+
+                minFacePresenceConfidence:
+                    0.5,
+
+                minTrackingConfidence:
+                    0.5
+            }
+        );
+
+
+    statusElement.textContent =
+        "Face detector ready. Start the camera.";
+}
+
+
+// ============================================================
+// FACE WIDTH
+// ============================================================
+
+function getFaceWidth(
+    landmarks
+) {
+
+    let minX =
+        Infinity;
+
+    let maxX =
+        -Infinity;
+
+
+    for (
+        const point of landmarks
+    ) {
+
+        minX =
+            Math.min(
+                minX,
+                point.x
+            );
+
+        maxX =
+            Math.max(
+                maxX,
+                point.x
+            );
+    }
+
+
+    return Math.max(
+        maxX - minX,
+        1e-6
+    );
+}
+
+
+// ============================================================
+// FRAME-LEVEL MOTION
+// ============================================================
+
+function calculateFrameMotion(
+    currentLandmarks
+) {
+
+    if (
+        !previousLandmarks
+    ) {
+
+        previousLandmarks =
+            currentLandmarks.map(
+                point => ({
+
+                    x: point.x,
+
+                    y: point.y
+                })
+            );
+
+
+        return {
+
+            movingPercentage: 0,
+
+            meanDistance: 0
+        };
+    }
+
+
+    const numberOfLandmarks =
+        Math.min(
+
+            currentLandmarks.length,
+
+            previousLandmarks.length
+        );
+
+
+    const faceWidth =
+        getFaceWidth(
+            currentLandmarks
+        );
+
+
+    let movingCount = 0;
+
+    let distanceSum = 0;
+
+
+    for (
+        let i = 0;
+        i < numberOfLandmarks;
+        i++
+    ) {
+
+        const current =
+            currentLandmarks[i];
+
+        const previous =
+            previousLandmarks[i];
+
+
+        const dx =
+            current.x -
+            previous.x;
+
+        const dy =
+            current.y -
+            previous.y;
+
+
+        const displacement =
+            Math.sqrt(
+                dx * dx +
+                dy * dy
+            );
+
+
+        const normalizedDisplacement =
+            displacement /
+            faceWidth;
+
+
+        // Ignore very small tracking variations.
+        if (
+            normalizedDisplacement >=
+            LANDMARK_MOVEMENT_THRESHOLD
+        ) {
+
+            movingCount++;
+
+            distanceSum +=
+                normalizedDisplacement;
+        }
+    }
+
+
+    const movingPercentage =
+        movingCount /
+        numberOfLandmarks;
+
+
+    const meanDistance =
+        movingCount > 0
+
+            ? distanceSum /
+              movingCount
+
+            : 0;
+
+
+    previousLandmarks =
+        currentLandmarks.map(
+            point => ({
+
+                x: point.x,
+
+                y: point.y
+            })
+        );
+
+
+    return {
+
+        movingPercentage,
+
+        meanDistance
+    };
+}
+
+
+// ============================================================
+// MOTION INDEX
+// ============================================================
+
+function calculateMotionIndex(
+    movingPercentage,
+    meanDistance
+) {
+
+    const percentageComponent =
+        movingPercentage;
+
+
+    const distanceComponent =
+        Math.min(
+
+            meanDistance /
+            BRUSQUE_MOVEMENT_DISTANCE,
+
+            1
+        );
+
+
+    return (
+
+        MOVEMENT_PERCENTAGE_WEIGHT *
+        percentageComponent
+
+        +
+
+        MOVEMENT_DISTANCE_WEIGHT *
+        distanceComponent
+    );
+}
+
+
+// ============================================================
+// ACCUMULATE MOTION
+// ============================================================
+
+function accumulateMotion(
+    frameMotion
+) {
+
+    motionFrameCount++;
+
+    motionPercentageSum +=
+        frameMotion.movingPercentage;
+
+    motionDistanceSum +=
+        frameMotion.meanDistance;
+}
+
+
+// ============================================================
+// FINISH ONE-SECOND MOTION WINDOW
+// ============================================================
+
+function finishMotionSecond() {
+
+    if (
+        motionFrameCount === 0
+    ) {
+
+        return {
+
+            motionIndex: 0,
+
+            movingPercentage: 0,
+
+            meanDistance: 0
+        };
+    }
+
+
+    const movingPercentage =
+        motionPercentageSum /
+        motionFrameCount;
+
+
+    const meanDistance =
+        motionDistanceSum /
+        motionFrameCount;
+
+
+    const motionIndex =
+        calculateMotionIndex(
+
+            movingPercentage,
+
+            meanDistance
+        );
+
+
+    motionFrameCount = 0;
+
+    motionPercentageSum = 0;
+
+    motionDistanceSum = 0;
+
+
+    return {
+
+        motionIndex,
+
+        movingPercentage,
+
+        meanDistance
+    };
+}
+
+
+// ============================================================
+// POINT-IN-POLYGON
+// ============================================================
+
+function pointInPolygon(
+    x,
+    y,
+    polygon
+) {
+
+    let inside = false;
+
+
+    for (
+        let i = 0,
+            j = polygon.length - 1;
+
+        i < polygon.length;
+
+        j = i++
+    ) {
+
+        const xi =
+            polygon[i].x;
+
+        const yi =
+            polygon[i].y;
+
+        const xj =
+            polygon[j].x;
+
+        const yj =
+            polygon[j].y;
+
+
+        const intersect =
+
+            ((yi > y) !== (yj > y))
+
+            &&
+
+            (
+                x <
+                (xj - xi) *
+                (y - yi) /
+                ((yj - yi) || 1e-12)
+                +
+                xi
+            );
+
+
+        if (intersect) {
+
+            inside =
+                !inside;
+        }
+    }
+
+
+    return inside;
+}
+
+
+// ============================================================
+// ROI RGB
+// ============================================================
+
+function getMeanRGBFromMask(
+    ctx,
+    landmarks,
+    width,
+    height
+) {
+
+    if (
+        !landmarks ||
+        landmarks.length === 0
+    ) {
+
+        return null;
+    }
+
+
+    const imageData =
+        ctx.getImageData(
+
+            0,
+            0,
+            width,
+            height
+        );
+
+
+    const data =
+        imageData.data;
+
+
+    const faceOvalIndices = [
+
+        10, 338, 297, 332,
+        284, 251, 389, 356,
+        454, 323, 361, 288,
+        397, 365, 379, 378,
+        400, 377, 152, 148,
+        176, 149, 150, 136,
+        172, 58, 132, 93,
+        234, 127, 162, 21,
+        54, 103, 67, 109
+    ];
+
+
+    const leftEyeIndices = [
+
+        33, 7, 163, 144,
+        145, 153, 154, 155,
+        133, 173, 157, 158,
+        159, 160, 161, 246
+    ];
+
+
+    const rightEyeIndices = [
+
+        362, 382, 381, 380,
+        374, 373, 390, 249,
+        263, 466, 388, 387,
+        386, 385, 384, 398
+    ];
+
+
+    const mouthIndices = [
+
+        61, 146, 91, 181,
+        84, 17, 314, 405,
+        321, 375, 291, 308,
+        324, 318, 402, 317,
+        14, 87, 178, 88,
+        95, 78
+    ];
+
+
+    function makePolygon(
+        indices
+    ) {
+
+        return indices.map(
+            index => ({
+
+                x:
+                    landmarks[index].x *
+                    width,
+
+                y:
+                    landmarks[index].y *
+                    height
+            })
+        );
+    }
+
+
+    const facePolygon =
+        makePolygon(
+            faceOvalIndices
+        );
+
+
+    const leftEyePolygon =
+        makePolygon(
+            leftEyeIndices
+        );
+
+
+    const rightEyePolygon =
+        makePolygon(
+            rightEyeIndices
+        );
+
+
+    const mouthPolygon =
+        makePolygon(
+            mouthIndices
+        );
+
+
+    let minX =
+        width;
+
+    let maxX =
+        0;
+
+    let minY =
+        height;
+
+    let maxY =
+        0;
+
+
+    for (
+        const point of facePolygon
+    ) {
+
+        minX =
+            Math.min(
+                minX,
+                point.x
+            );
+
+        maxX =
+            Math.max(
+                maxX,
+                point.x
+            );
+
+        minY =
+            Math.min(
+                minY,
+                point.y
+            );
+
+        maxY =
+            Math.max(
+                maxY,
+                point.y
+            );
+    }
+
+
+    minX =
+        Math.max(
+            0,
+            Math.floor(minX)
+        );
+
+
+    maxX =
+        Math.min(
+            width - 1,
+            Math.ceil(maxX)
+        );
+
+
+    minY =
+        Math.max(
+            0,
+            Math.floor(minY)
+        );
+
+
+    maxY =
+        Math.min(
+            height - 1,
+            Math.ceil(maxY)
+        );
+
+
+    let sumR = 0;
+
+    let sumG = 0;
+
+    let sumB = 0;
+
+    let count = 0;
+
+
+    for (
+        let y = minY;
+        y <= maxY;
+        y++
+    ) {
+
+        for (
+            let x = minX;
+            x <= maxX;
+            x++
+        ) {
+
+            if (
+                !pointInPolygon(
+                    x,
+                    y,
+                    facePolygon
+                )
+            ) {
+
+                continue;
+            }
+
+
+            if (
+
+                pointInPolygon(
+                    x,
+                    y,
+                    leftEyePolygon
+                )
+
+                ||
+
+                pointInPolygon(
+                    x,
+                    y,
+                    rightEyePolygon
+                )
+
+            ) {
+
+                continue;
+            }
+
+
+            if (
+                pointInPolygon(
+                    x,
+                    y,
+                    mouthPolygon
+                )
+            ) {
+
+                continue;
+            }
+
+
+            const index =
+                (y * width + x) *
+                4;
+
+
+            sumR +=
+                data[index];
+
+            sumG +=
+                data[index + 1];
+
+            sumB +=
+                data[index + 2];
+
+
+            count++;
+        }
+    }
+
+
+    if (
+        count === 0
+    ) {
+
+        return null;
+    }
+
+
+    return [
+
+        sumR / count,
+
+        sumG / count,
+
+        sumB / count
+    ];
+}
+
+
+// ============================================================
+// CHROM
+// ============================================================
+//
+// Original logic preserved.
+//
+
+function applyChrom(
+    buffer
+) {
+
+    const n =
+        buffer.length;
+
+
+    if (
+        n < 15
+    ) {
+
+        return 0;
+    }
+
+
+    let sR = 0;
+
+    let sG = 0;
+
+    let sB = 0;
+
+
+    for (
+        let i = 0;
+        i < n;
+        i++
+    ) {
+
+        sR +=
+            buffer[i][0];
+
+        sG +=
+            buffer[i][1];
+
+        sB +=
+            buffer[i][2];
+    }
+
+
+    const mR =
+        sR / n;
+
+    const mG =
+        sG / n;
+
+    const mB =
+        sB / n;
+
+
+    let X = [];
+
+    let Y = [];
+
+
+    for (
+        let i = 0;
+        i < n;
+        i++
+    ) {
+
+        const Rn =
+            buffer[i][0] /
+            mR;
+
+        const Gn =
+            buffer[i][1] /
+            mG;
+
+        const Bn =
+            buffer[i][2] /
+            mB;
+
+
+        X.push(
+            3 * Rn -
+            2 * Gn
+        );
+
+
+        Y.push(
+            1.5 * Rn +
+            Gn -
+            1.5 * Bn
+        );
+    }
+
+
+    const detrend =
+        array => {
+
+            const avg =
+                array.reduce(
+                    (a, b) =>
+                        a + b,
+                    0
+                ) /
+                array.length;
+
+
+            return array.map(
+                value =>
+                    value -
+                    avg
+            );
+        };
+
+
+    const Xf =
+        detrend(X);
+
+    const Yf =
+        detrend(Y);
+
+
+    const std =
+        array =>
+
+            Math.sqrt(
+
+                array.reduce(
+                    (a, b) =>
+                        a + b * b,
+                    0
+                ) /
+                array.length
+            );
+
+
+    const alpha =
+        std(Xf) /
+        (
+            std(Yf) +
+            0.0001
+        );
+
+
+    return (
+
+        Xf[n - 1] -
+        alpha *
+        Yf[n - 1]
+    );
+}
+
+
+// ============================================================
+// POS
+// ============================================================
+//
+// Original logic preserved.
+//
+
+function applyPos(
+    buffer
+) {
+
+    const n =
+        buffer.length;
+
+
+    if (
+        n < 15
+    ) {
+
+        return 0;
+    }
+
+
+    let sR = 0;
+
+    let sG = 0;
+
+    let sB = 0;
+
+
+    for (
+        let i = 0;
+        i < n;
+        i++
+    ) {
+
+        sR +=
+            buffer[i][0];
+
+        sG +=
+            buffer[i][1];
+
+        sB +=
+            buffer[i][2];
+    }
+
+
+    const mR =
+        sR / n;
+
+    const mG =
+        sG / n;
+
+    const mB =
+        sB / n;
+
+
+    let S1 = [];
+
+    let S2 = [];
+
+
+    for (
+        let i = 0;
+        i < n;
+        i++
+    ) {
+
+        const Rn =
+            buffer[i][0] /
+            mR;
+
+        const Gn =
+            buffer[i][1] /
+            mG;
+
+        const Bn =
+            buffer[i][2] /
+            mB;
+
+
+        S1.push(
+            Gn -
+            Bn
+        );
+
+
+        S2.push(
+
+            -2 * Rn +
+            Gn +
+            Bn
+        );
+    }
+
+
+    const std =
+        array => {
+
+            const mu =
+                array.reduce(
+                    (a, b) =>
+                        a + b,
+                    0
+                ) /
+                array.length;
+
+
+            return Math.sqrt(
+
+                array
+                    .map(
+                        x =>
+                            Math.pow(
+                                x - mu,
+                                2
+                            )
+                    )
+                    .reduce(
+                        (a, b) =>
+                            a + b,
+                        0
+                    ) /
+                array.length
+            );
+        };
+
+
+    const alpha =
+        std(S1) /
+        (
+            std(S2) +
+            0.0001
+        );
+
+
+    return (
+
+        S1[n - 1] +
+        alpha *
+        S2[n - 1]
+    );
+}
+
+
+// ============================================================
+// BUTTERWORTH
+// ============================================================
+
+function filterButterworth3rdOrder(
+    signal,
+    fs
+) {
+
+    if (
+        signal.length < 10
+    ) {
+
+        return signal.slice();
+    }
+
+
+    // Approximately 30 fps.
+    //
+    // These coefficients are kept from the previous
+    // implementation.
+
+    const hpB = [
+
+        0.93909165,
+
+        -2.81727496,
+
+        2.81727496,
+
+        -0.93909165
+    ];
+
+
+    const hpA = [
+
+        1.0,
+
+        -2.87435689,
+
+        2.75648320,
+
+        -0.88189313
+    ];
+
+
+    const lpB = [
+
+        0.02303355,
+
+        0.06910066,
+
+        0.06910066,
+
+        0.02303355
+    ];
+
+
+    const lpA = [
+
+        1.0,
+
+        -1.63914885,
+
+        1.06652554,
+
+        -0.24310828
+    ];
+
+
+    function applyIIR(
+        input,
+        b,
+        a
+    ) {
+
+        const output =
+            new Array(
+                input.length
+            ).fill(0);
+
+
+        for (
+            let n = 0;
+            n < input.length;
+            n++
+        ) {
+
+            let value =
+                b[0] *
+                input[n];
+
+
+            if (
+                n >= 1
+            ) {
+
+                value +=
+
+                    b[1] *
+                    input[n - 1]
+
+                    -
+
+                    a[1] *
+                    output[n - 1];
+            }
+
+
+            if (
+                n >= 2
+            ) {
+
+                value +=
+
+                    b[2] *
+                    input[n - 2]
+
+                    -
+
+                    a[2] *
+                    output[n - 2];
+            }
+
+
+            if (
+                n >= 3
+            ) {
+
+                value +=
+
+                    b[3] *
+                    input[n - 3]
+
+                    -
+
+                    a[3] *
+                    output[n - 3];
+            }
+
+
+            output[n] =
+                value;
+        }
+
+
+        return output;
+    }
+
+
+    let result =
+        applyIIR(
+            signal,
+            hpB,
+            hpA
+        );
+
+
+    result =
+        applyIIR(
+            result,
+            lpB,
+            lpA
+        );
+
+
+    return result;
+}
+
+
+// ============================================================
+// DETREND
+// ============================================================
+
+function detrendSignal(
+    signal
+) {
+
+    const n =
+        signal.length;
+
+
+    if (
+        n < 2
+    ) {
+
+        return signal.slice();
+    }
+
+
+    let sumX = 0;
+
+    let sumY = 0;
+
+    let sumXX = 0;
+
+    let sumXY = 0;
+
+
+    for (
+        let i = 0;
+        i < n;
+        i++
+    ) {
+
+        sumX += i;
+
+        sumY +=
+            signal[i];
+
+        sumXX +=
+            i * i;
+
+        sumXY +=
+            i * signal[i];
+    }
+
+
+    const denominator =
+        n * sumXX -
+        sumX * sumX;
+
+
+    if (
+        Math.abs(
+            denominator
+        ) < 1e-12
+    ) {
+
+        return signal.slice();
+    }
+
+
+    const slope =
+        (
+            n * sumXY -
+            sumX * sumY
+        ) /
+        denominator;
+
+
+    const intercept =
+        (
+            sumY -
+            slope * sumX
+        ) /
+        n;
+
+
+    return signal.map(
+
+        (value, i) =>
+
+            value -
+            (
+                slope * i +
+                intercept
+            )
+    );
+}
+
+
+// ============================================================
+// PREPROCESSING
+// ============================================================
+//
+// This function generates the exact signal used for HR
+// spectral estimation:
+//
+// raw
+//   ↓
+// detrend
+//   ↓
+// Butterworth 0.3–3.3 Hz
+//   ↓
+// filtered
+//
+
+function preprocessSignal(
+    signal,
+    fps
+) {
+
+    const detrended =
+        detrendSignal(
+            signal
+        );
+
+
+    return filterButterworth3rdOrder(
+
+        detrended,
+
+        fps
+    );
+}
+
+
+// ============================================================
+// NEXT POWER OF TWO
+// ============================================================
+
+function nextPowerOfTwo(
+    n
+) {
+
+    let value = 1;
+
+
+    while (
+        value < n
+    ) {
+
+        value *= 2;
+    }
+
+
+    return value;
+}
+
+
+// ============================================================
+// HEART RATE ESTIMATION
+// ============================================================
+
+function estimateHeartRate(
+    signal,
+    fps
+) {
+
+    if (
+        signal.length < 30
+    ) {
+
+        return null;
+    }
+
+
+    // IMPORTANT:
+    // This is the same filtered signal that can be displayed
+    // using the "Filtered" graph options.
+
+    const filtered =
+        preprocessSignal(
+            signal,
+            fps
+        );
+
+
+    const n =
+        filtered.length;
+
+
+    const fftSize =
+        nextPowerOfTwo(
+            n
+        );
+
+
+    // Zero padding.
+    const padded =
+        new Array(
+            fftSize
+        ).fill(0);
+
+
+    for (
+        let i = 0;
+        i < n;
+        i++
+    ) {
+
+        padded[i] =
+            filtered[i];
+    }
+
+
+    const half =
+        Math.floor(
+            fftSize / 2
+        );
+
+
+    let maxPower =
+        -Infinity;
+
+    let peakFrequency =
+        null;
+
+
+    for (
+        let k = 0;
+        k <= half;
+        k++
+    ) {
+
+        const frequency =
+            k *
+            fps /
+            fftSize;
+
+
+        // 0.6–3.3 Hz = 36–198 bpm.
+        if (
+            frequency < 0.6 ||
+            frequency > 3.3
+        ) {
+
+            continue;
+        }
+
+
+        let real = 0;
+
+        let imag = 0;
+
+
+        for (
+            let nIndex = 0;
+            nIndex < fftSize;
+            nIndex++
+        ) {
+
+            const angle =
+                2 *
+                Math.PI *
+                k *
+                nIndex /
+                fftSize;
+
+
+            real +=
+
+                padded[nIndex] *
+                Math.cos(
+                    angle
+                );
+
+
+            imag -=
+
+                padded[nIndex] *
+                Math.sin(
+                    angle
+                );
+        }
+
+
+        const power =
+            real * real +
+            imag * imag;
+
+
+        if (
+            power >
+            maxPower
+        ) {
+
+            maxPower =
+                power;
+
+            peakFrequency =
+                frequency;
+        }
+    }
+
+
+    if (
+        peakFrequency === null ||
+        !Number.isFinite(
+            peakFrequency
+        )
+    ) {
+
+        return null;
+    }
+
+
+    return (
+        peakFrequency *
+        60
+    );
+}
+
+
+// ============================================================
+// GET LAST 15 SECONDS
+// ============================================================
+
+function getLast15Seconds(
+    history,
+    timeHistory
+) {
+
+    if (
+        timeHistory.length === 0
+    ) {
+
+        return [];
+    }
+
+
+    const latestTime =
+        timeHistory[
+            timeHistory.length - 1
+        ];
+
+
+    const minimumTime =
+        latestTime -
+        HR_WINDOW_SECONDS;
+
+
+    const result = [];
+
+
+    for (
+        let i = 0;
+        i < history.length;
+        i++
+    ) {
+
+        if (
+            timeHistory[i] >=
+            minimumTime
+        ) {
+
+            result.push(
+                history[i]
+            );
+        }
+    }
+
+
+    return result;
+}
+
+
+// ============================================================
+// FRAME RATE
+// ============================================================
+
+function getFrameRate() {
+
+    if (!stream) {
+
+        return 30;
+    }
+
+
+    const track =
+        stream.getVideoTracks()[0];
+
+
+    if (!track) {
+
+        return 30;
+    }
+
+
+    const settings =
+        track.getSettings();
+
+
+    return (
+        settings.frameRate ||
+        30
+    );
+}
+
+
+// ============================================================
+// HR ESTIMATION
+// ============================================================
+
+function performEstimation(
+    currentTime
+) {
+
+    if (
+        signalTimeHistory.length < 2
+    ) {
+
+        return;
+    }
+
+
+    const elapsed =
+        currentTime -
+        signalTimeHistory[0];
+
+
+    // First estimate after 15 seconds.
+    if (
+        elapsed <
+        HR_WINDOW_SECONDS
+    ) {
+
+        const remaining =
+            Math.ceil(
+
+                HR_WINDOW_SECONDS -
+                elapsed
+            );
+
+
+        statusElement.textContent =
+
+            `Collecting data... ` +
+            `HR estimation will begin in ` +
+            `${remaining}s.`;
+
+        return;
+    }
+
+
+    // --------------------------------------------------------
+    // Motion during the last second
+    // --------------------------------------------------------
+
+    const motion =
+        finishMotionSecond();
+
+
+    currentMotionIndex =
+        motion.motionIndex;
+
+    currentMovingPercentage =
+        motion.movingPercentage;
+
+    currentMeanDistance =
+        motion.meanDistance;
+
+
+    motionIndexElement.textContent =
+        currentMotionIndex.toFixed(2);
+
+
+    movingLandmarksElement.textContent =
+
+        `${(
+            currentMovingPercentage *
+            100
+        ).toFixed(0)}%`;
+
+
+    // --------------------------------------------------------
+    // Last 15 seconds
+    // --------------------------------------------------------
+
+    const chromWindow =
+        getLast15Seconds(
+
+            chromRawHistory,
+
+            signalTimeHistory
+        );
+
+
+    const posWindow =
+        getLast15Seconds(
+
+            posRawHistory,
+
+            signalTimeHistory
+        );
+
+
+    if (
+        chromWindow.length < 30 ||
+        posWindow.length < 30
+    ) {
+
+        return;
+    }
+
+
+    const fps =
+        getFrameRate();
+
+
+    // --------------------------------------------------------
+    // New spectral estimates
+    // --------------------------------------------------------
+
+    const newChromHR =
+        estimateHeartRate(
+
+            chromWindow,
+
+            fps
+        );
+
+
+    const newPosHR =
+        estimateHeartRate(
+
+            posWindow,
+
+            fps
+        );
+
+
+    // --------------------------------------------------------
+    // Motion rejection
+    // --------------------------------------------------------
+
+    const highMotion =
+        currentMotionIndex >=
+        MOTION_REJECTION_THRESHOLD;
+
+
+    if (highMotion) {
+
+        if (
+            hasPreviousEstimate
+        ) {
+
+            chromHRElement.textContent =
+
+                `${lastChromHR.toFixed(1)} bpm`;
+
+
+            posHRElement.textContent =
+
+                `${lastPosHR.toFixed(1)} bpm`;
+
+
+            statusElement.textContent =
+
+                `High facial motion detected. ` +
+                `Previous HR estimate retained. ` +
+                `Motion index: ` +
+                `${currentMotionIndex.toFixed(2)}.`;
+
+        } else {
+
+            chromHRElement.textContent =
+                "--";
+
+            posHRElement.textContent =
+                "--";
+
+
+            statusElement.textContent =
+
+                `High facial motion detected. ` +
+                `Waiting for a stable segment. ` +
+                `Motion index: ` +
+                `${currentMotionIndex.toFixed(2)}.`;
+        }
+
+
+        // The graph is still updated.
+        drawGraph();
+
+        return;
+    }
+
+
+    // --------------------------------------------------------
+    // Accept CHROM
+    // --------------------------------------------------------
+
+    if (
+        newChromHR !== null &&
+        Number.isFinite(
+            newChromHR
+        )
+    ) {
+
+        lastChromHR =
+            newChromHR;
+
+
+        chromHRElement.textContent =
+
+            `${newChromHR.toFixed(1)} bpm`;
+    }
+
+
+    // --------------------------------------------------------
+    // Accept POS
+    // --------------------------------------------------------
+
+    if (
+        newPosHR !== null &&
+        Number.isFinite(
+            newPosHR
+        )
+    ) {
+
+        lastPosHR =
+            newPosHR;
+
+
+        posHRElement.textContent =
+
+            `${newPosHR.toFixed(1)} bpm`;
+    }
+
+
+    if (
+        newChromHR !== null ||
+        newPosHR !== null
+    ) {
+
+        hasPreviousEstimate =
+            true;
+    }
+
+
+    statusElement.textContent =
+
+        `HR updated. Motion index: ` +
+        `${currentMotionIndex.toFixed(2)} ` +
+        `(${(
+            currentMovingPercentage *
+            100
+        ).toFixed(0)}% landmarks moving, ` +
+        `${(
+            currentMeanDistance *
+            100
+        ).toFixed(2)}% face width mean displacement).`;
+
+
+    drawGraph();
+}
+
+
+// ============================================================
+// GRAPH
+// ============================================================
+//
+// Available modes:
+//
+// CHROM Raw
+// CHROM Filtered
+// POS Raw
+// POS Filtered
+//
+// "Raw" = directly from applyChrom/applyPos.
+//
+// "Filtered" = raw → detrend → Butterworth.
+//
+// HR estimation ALWAYS uses the filtered signal.
+//
+
+function drawGraph() {
+
+    const cssWidth =
+        graphCanvas.clientWidth;
+
+    const cssHeight =
+        graphCanvas.clientHeight;
+
+
+    const dpr =
+        window.devicePixelRatio ||
+        1;
+
+
+    graphCanvas.width =
+        cssWidth * dpr;
+
+    graphCanvas.height =
+        cssHeight * dpr;
+
+
+    graphCtx.clearRect(
+
+        0,
+        0,
+        graphCanvas.width,
+        graphCanvas.height
+    );
+
+
+    if (
+        signalTimeHistory.length < 2
+    ) {
+
+        return;
+    }
+
+
+    const selectedSignal =
+        signalSelect.value;
+
+
+    let rawHistory;
+
+    let filtered;
+
+
+    // --------------------------------------------------------
+    // Select signal
+    // --------------------------------------------------------
+
+    switch (
+        selectedSignal
+    ) {
+
+        case "chromRaw":
+
+            rawHistory =
+                chromRawHistory;
+
+            break;
+
+
+        case "chromFiltered":
+
+            rawHistory =
+                chromRawHistory;
+
+            break;
+
+
+        case "posRaw":
+
+            rawHistory =
+                posRawHistory;
+
+            break;
+
+
+        case "posFiltered":
+
+            rawHistory =
+                posRawHistory;
+
+            break;
+
+
+        default:
+
+            rawHistory =
+                chromRawHistory;
+    }
+
+
+    // --------------------------------------------------------
+    // Last 15 seconds
+    // --------------------------------------------------------
+
+    const rawSignal =
+        getLast15Seconds(
+
+            rawHistory,
+
+            signalTimeHistory
+        );
+
+
+    if (
+        rawSignal.length < 2
+    ) {
+
+        return;
+    }
+
+
+    // --------------------------------------------------------
+    // Filter only when requested.
+    // --------------------------------------------------------
+
+    if (
+        selectedSignal ===
+        "chromFiltered"
+
+        ||
+
+        selectedSignal ===
+        "posFiltered"
+    ) {
+
+        const fps =
+            getFrameRate();
+
+
+        filtered =
+            preprocessSignal(
+
+                rawSignal,
+
+                fps
+            );
+
+    } else {
+
+        filtered =
+            rawSignal;
+    }
+
+
+    if (
+        filtered.length < 2
+    ) {
+
+        return;
+    }
+
+
+    // --------------------------------------------------------
+    // Graph title
+    // --------------------------------------------------------
+
+    const titles = {
+
+        chromRaw:
+            "CHROM — Raw signal",
+
+        chromFiltered:
+            "CHROM — Filtered signal",
+
+        posRaw:
+            "POS — Raw signal",
+
+        posFiltered:
+            "POS — Filtered signal"
+    };
+
+
+    graphTitle.textContent =
+        `${titles[selectedSignal]} — last 15 seconds`;
+
+
+    // --------------------------------------------------------
+    // Signal limits
+    // --------------------------------------------------------
+
+    let min =
+        Infinity;
+
+    let max =
+        -Infinity;
+
+
+    for (
+        const value of filtered
+    ) {
+
+        min =
+            Math.min(
+                min,
+                value
+            );
+
+        max =
+            Math.max(
+                max,
+                value
+            );
+    }
+
+
+    if (
+        !Number.isFinite(min) ||
+        !Number.isFinite(max) ||
+        Math.abs(max - min) < 1e-12
+    ) {
+
+        return;
+    }
+
+
+    // --------------------------------------------------------
+    // Draw signal
+    // --------------------------------------------------------
+
+    graphCtx.save();
+
+
+    graphCtx.strokeStyle =
+        "#44ccff";
+
+    graphCtx.lineWidth =
+        2 * dpr;
+
+
+    graphCtx.beginPath();
+
+
+    for (
+        let i = 0;
+        i < filtered.length;
+        i++
+    ) {
+
+        const x =
+
+            i /
+            (filtered.length - 1) *
+            graphCanvas.width;
+
+
+        const normalized =
+
+            (
+                filtered[i] -
+                min
+            )
+            /
+            (
+                max -
+                min
+            );
+
+
+        const y =
+
+            graphCanvas.height -
+            normalized *
+            graphCanvas.height;
+
+
+        if (
+            i === 0
+        ) {
+
+            graphCtx.moveTo(
+                x,
+                y
+            );
+
+        } else {
+
+            graphCtx.lineTo(
+                x,
+                y
+            );
+        }
+    }
+
+
+    graphCtx.stroke();
+
+    graphCtx.restore();
+}
+
+
+// ============================================================
+// SIGNAL SELECTOR
+// ============================================================
+
+signalSelect.addEventListener(
+    "change",
+    () => {
+
+        drawGraph();
+    }
+);
+
+
+// ============================================================
+// ROI BUTTON
+// ============================================================
+
+roiButton.addEventListener(
+    "click",
+    () => {
+
+        showROI =
+            !showROI;
+
+
+        roiButton.textContent =
+            showROI
+                ? "Hide ROI"
+                : "Show ROI";
+    }
+);
+
+
+// ============================================================
+// DRAW ROI
+// ============================================================
+
+function drawROI(
+    landmarks
+) {
+
+    const width =
+        displayCanvas.width;
+
+    const height =
+        displayCanvas.height;
+
+
+    const faceOvalIndices = [
+
+        10, 338, 297, 332,
+        284, 251, 389, 356,
+        454, 323, 361, 288,
+        397, 365, 379, 378,
+        400, 377, 152, 148,
+        176, 149, 150, 136,
+        172, 58, 132, 93,
+        234, 127, 162, 21,
+        54, 103, 67, 109
+    ];
+
+
+    const leftEyeIndices = [
+
+        33, 7, 163, 144,
+        145, 153, 154, 155,
+        133, 173, 157, 158,
+        159, 160, 161, 246
+    ];
+
+
+    const rightEyeIndices = [
+
+        362, 382, 381, 380,
+        374, 373, 390, 249,
+        263, 466, 388, 387,
+        386, 385, 384, 398
+    ];
+
+
+    const mouthIndices = [
+
+        61, 146, 91, 181,
+        84, 17, 314, 405,
+        321, 375, 291, 308,
+        324, 318, 402, 317,
+        14, 87, 178, 88,
+        95, 78
+    ];
+
+
+    function polygonFromIndices(
+        indices
+    ) {
+
+        return indices.map(
+            index => ({
+
+                x:
+                    landmarks[index].x *
+                    width,
+
+                y:
+                    landmarks[index].y *
+                    height
+            })
+        );
+    }
+
+
+    const face =
+        polygonFromIndices(
+            faceOvalIndices
+        );
+
+
+    const leftEye =
+        polygonFromIndices(
+            leftEyeIndices
+        );
+
+
+    const rightEye =
+        polygonFromIndices(
+            rightEyeIndices
+        );
+
+
+    const mouth =
+        polygonFromIndices(
+            mouthIndices
+        );
+
+
+    displayCtx.save();
+
+
+    displayCtx.fillStyle =
+        "rgba(0, 255, 0, 0.20)";
+
+
+    displayCtx.beginPath();
+
+
+    displayCtx.moveTo(
+        face[0].x,
+        face[0].y
+    );
+
+
+    for (
+        let i = 1;
+        i < face.length;
+        i++
+    ) {
+
+        displayCtx.lineTo(
+            face[i].x,
+            face[i].y
+        );
+    }
+
+
+    displayCtx.closePath();
+
+
+    function addHole(
+        polygon
+    ) {
+
+        displayCtx.moveTo(
+            polygon[0].x,
+            polygon[0].y
+        );
+
+
+        for (
+            let i = 1;
+            i < polygon.length;
+            i++
+        ) {
+
+            displayCtx.lineTo(
+                polygon[i].x,
+                polygon[i].y
+            );
+        }
+
+
+        displayCtx.closePath();
+    }
+
+
+    addHole(leftEye);
+
+    addHole(rightEye);
+
+    addHole(mouth);
+
+
+    displayCtx.fill(
+        "evenodd"
+    );
+
+
+    displayCtx.strokeStyle =
+        "rgba(0, 255, 0, 0.8)";
+
+    displayCtx.lineWidth = 2;
+
+
+    displayCtx.beginPath();
+
+
+    displayCtx.moveTo(
+        face[0].x,
+        face[0].y
+    );
+
+
+    for (
+        let i = 1;
+        i < face.length;
+        i++
+    ) {
+
+        displayCtx.lineTo(
+            face[i].x,
+            face[i].y
+        );
+    }
+
+
+    displayCtx.closePath();
+
+
+    displayCtx.stroke();
+
+
+    displayCtx.restore();
+}
+
+
+// ============================================================
+// PROCESS FRAME
+// ============================================================
+
+async function processFrame() {
+
+    if (!running) {
+        return;
+    }
+
+
+    if (
+        video.readyState <
+        HTMLMediaElement.HAVE_CURRENT_DATA
+    ) {
+
+        animationFrameId =
+            requestAnimationFrame(
+                processFrame
+            );
+
+        return;
+    }
+
+
+    const now =
+        performance.now();
+
+
+    // --------------------------------------------------------
+    // Draw camera
+    // --------------------------------------------------------
+
+    displayCtx.drawImage(
+
+        video,
+
+        0,
+        0,
+
+        displayCanvas.width,
+        displayCanvas.height
+    );
+
+
+    // --------------------------------------------------------
+    // Face detection
+    // --------------------------------------------------------
+
+    let results = null;
+
+
+    try {
+
+        let timestampMs =
+            Math.round(
+                video.currentTime *
+                1000
+            );
+
+
+        if (
+            timestampMs <=
+            lastTimestamp
+        ) {
+
+            timestampMs =
+                lastTimestamp + 1;
+        }
+
+
+        lastTimestamp =
+            timestampMs;
+
+
+        results =
+            faceLandmarker.detectForVideo(
+
+                video,
+
+                timestampMs
+            );
+
+
+    } catch (error) {
+
+        console.error(
+            "FaceLandmarker error:",
+            error
+        );
+    }
+
+
+    if (
+
+        results &&
+
+        results.faceLandmarks &&
+
+        results.faceLandmarks.length > 0
+
+    ) {
+
+        const landmarks =
+            results.faceLandmarks[0];
+
+
+        // ----------------------------------------------------
+        // Motion
+        // ----------------------------------------------------
+
+        const frameMotion =
+            calculateFrameMotion(
+                landmarks
+            );
+
+
+        accumulateMotion(
+            frameMotion
+        );
+
+
+        // ----------------------------------------------------
+        // RGB
+        // ----------------------------------------------------
+
+        const rgb =
+            getMeanRGBFromMask(
+
+                displayCtx,
+
+                landmarks,
+
+                displayCanvas.width,
+
+                displayCanvas.height
+            );
+
+
+        if (rgb) {
+
+            rgbBuffer.push(
+                rgb
+            );
+
+
+            if (
+                rgbBuffer.length >
+                RGB_BUFFER_LENGTH
+            ) {
+
+                rgbBuffer.shift();
+            }
+
+
+            // ------------------------------------------------
+            // CHROM / POS
+            // ------------------------------------------------
+
+            if (
+                rgbBuffer.length >= 15
+            ) {
+
+                const chrom =
+                    applyChrom(
+                        rgbBuffer
+                    );
+
+
+                const pos =
+                    applyPos(
+                        rgbBuffer
+                    );
+
+
+                chromRawHistory.push(
+                    chrom
+                );
+
+
+                posRawHistory.push(
+                    pos
+                );
+
+
+                signalTimeHistory.push(
+                    now / 1000
+                );
+
+
+                // Keep slightly more than 15 seconds.
+                const maxHistory =
+                    Math.ceil(
+
+                        getFrameRate() *
+                        (
+                            HR_WINDOW_SECONDS +
+                            5
+                        )
+                    );
+
+
+                while (
+                    chromRawHistory.length >
+                    maxHistory
+                ) {
+
+                    chromRawHistory.shift();
+
+                    posRawHistory.shift();
+
+                    signalTimeHistory.shift();
                 }
-            } else {
-                isRunning = false;
-                if (localStream) {
-                    localStream.getTracks().forEach(track => track.stop());
+
+
+                // ------------------------------------------------
+                // Estimate once per second
+                // ------------------------------------------------
+
+                const currentTime =
+                    now / 1000;
+
+
+                if (
+                    lastEstimationTime === null
+                ) {
+
+                    lastEstimationTime =
+                        currentTime;
+
+                } else if (
+
+                    currentTime -
+                    lastEstimationTime >=
+                    ESTIMATION_INTERVAL_SECONDS
+
+                ) {
+
+                    lastEstimationTime =
+                        currentTime;
+
+
+                    performEstimation(
+                        currentTime
+                    );
                 }
-                video.srcObject = null;
-                startBtn.innerText = "Iniciar Captura";
-                startBtn.style.background = "#25d366"; // Volta para verde
-                status.innerText = "Captura interrompida. Gráfico congelado.";
             }
         }
 
-        function getMeanRGB(ctx, x, y, w, h) {
-            const imageData = ctx.getImageData(x, y, w, h);
-            const data = imageData.data;
-            let r = 0, g = 0, b = 0;
-            for (let i = 0; i < data.length; i += 4) {
-                r += data[i];
-                g += data[i + 1];
-                b += data[i + 2];
-            }
-            const count = data.length / 4;
-            return [r / count, g / count, b / count];
+
+        // ----------------------------------------------------
+        // ROI
+        // ----------------------------------------------------
+
+        if (showROI) {
+
+            drawROI(
+                landmarks
+            );
         }
 
-        function applyChrom(buffer) {
-            const n = buffer.length;
-            if (n < 15) return 0;
 
-            // Normalização por média do buffer
-            let sR = 0, sG = 0, sB = 0;
-            for(let i=0; i<n; i++) { sR += buffer[i][0]; sG += buffer[i][1]; sB += buffer[i][2]; }
-            const mR = sR/n, mG = sG/n, mB = sB/n;
+    } else {
 
-            let X = [], Y = [];
-            for (let i = 0; i < n; i++) {
-                const Rn = buffer[i][0] / mR;
-                const Gn = buffer[i][1] / mG;
-                const Bn = buffer[i][2] / mB;
-                // De Haan 2013 Projections: Xs = 3Rn - 2Gn; Ys = 1.5Rn + Gn - 1.5Bn
-                X.push(3 * Rn - 2 * Gn);
-                Y.push(1.5 * Rn + Gn - 1.5 * Bn);
-            }
+        previousLandmarks = null;
 
-            const detrend = (a) => {
-                const avg = a.reduce((p, c) => p + c, 0) / a.length;
-                return a.map(v => v - avg);
-            };
-            const Xf = detrend(X);
-            const Yf = detrend(Y);
 
-            const std = (a) => Math.sqrt(a.reduce((p, c) => p + c*c, 0) / a.length);
-            const alpha = std(Xf) / (std(Yf) + 0.0001);
-            
-            return Xf[n - 1] - alpha * Yf[n - 1];
+        statusElement.textContent =
+            "No face detected. Please position your face in the camera view.";
+    }
+
+
+    // --------------------------------------------------------
+    // Next frame
+    // --------------------------------------------------------
+
+    if (
+
+        "requestVideoFrameCallback" in
+        HTMLVideoElement.prototype
+
+    ) {
+
+        video.requestVideoFrameCallback(
+            () => processFrame()
+        );
+
+    } else {
+
+        animationFrameId =
+            requestAnimationFrame(
+                processFrame
+            );
+    }
+}
+
+
+// ============================================================
+// START / STOP
+// ============================================================
+
+startButton.addEventListener(
+    "click",
+    async () => {
+
+        if (!faceLandmarker) {
+
+            statusElement.textContent =
+                "Loading face detector...";
+
+
+            await initializeFaceLandmarker();
         }
 
-        function applyPos(buffer) {
-            const n = buffer.length;
-            if (n < 15) return 0;
 
-            // 1. Normalização Temporal (Cn)
-            let sR = 0, sG = 0, sB = 0;
-            for(let i=0; i<n; i++) { sR += buffer[i][0]; sG += buffer[i][1]; sB += buffer[i][2]; }
-            const mR = sR/n, mG = sG/n, mB = sB/n;
+        await startCamera();
+    }
+);
 
-            let S1 = [], S2 = [];
-            for (let i = 0; i < n; i++) {
-                const Rn = buffer[i][0] / mR;
-                const Gn = buffer[i][1] / mG;
-                const Bn = buffer[i][2] / mB;
-                
-                // Projeções POS: S = [[0, 1, -1], [-2, 1, 1]] * Cn
-                S1.push(Gn - Bn);
-                S2.push(-2 * Rn + Gn + Bn);
-            }
 
-            const std = (arr) => {
-                const mu = arr.reduce((a, b) => a + b, 0) / arr.length;
-                return Math.sqrt(arr.map(x => Math.pow(x - mu, 2)).reduce((a, b) => a + b, 0) / arr.length);
-            };
-            
-            const alpha = std(S1) / (std(S2) + 0.0001);
-            return S1[n - 1] + alpha * S2[n - 1];
+stopButton.addEventListener(
+    "click",
+    () => {
+
+        stopCamera();
+    }
+);
+
+
+// ============================================================
+// INITIALIZATION
+// ============================================================
+
+initializeFaceLandmarker()
+    .catch(
+        error => {
+
+            console.error(
+                error
+            );
+
+
+            statusElement.textContent =
+                "Could not initialize MediaPipe Face Landmarker.";
         }
+    );
 
-        function processFrame() {
-            if (!isRunning) return;
-            
-            if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                if (displayCanvas.width !== video.videoWidth) {
-                    displayCanvas.width = video.videoWidth;
-                    displayCanvas.height = video.videoHeight;
-                    graphCanvas.width = displayCanvas.width;
-                }
+</script>
 
-                displayCtx.drawImage(video, 0, 0);
-
-                const rw = 80, rh = 80;
-                const rx = (displayCanvas.width - rw) / 2;
-                const ry = (displayCanvas.height - rh) / 2 - 40; // ROI na região da testa
-
-                const currentRGB = getMeanRGB(displayCtx, rx, ry, rw, rh);
-                rgbBuffer.push(currentRGB);
-                if (rgbBuffer.length > 60) rgbBuffer.shift(); // ~2 segundos de buffer
-
-                const method = methodSelect.value;
-                const bvp = (method === 'CHROM') ? applyChrom(rgbBuffer) : applyPos(rgbBuffer);
-
-                bvpHistory.push(bvp);
-                if (bvpHistory.length > displayCanvas.width) bvpHistory.shift();
-
-                // Feedback Visual: Overlay Vermelho Pulsante na ROI
-                const pulse = Math.max(0, Math.min(1, (bvp + 0.015) * 30));
-                displayCtx.lineWidth = 3;
-                displayCtx.strokeStyle = '#25d366';
-                displayCtx.strokeRect(rx, ry, rw, rh);
-                displayCtx.fillStyle = `rgba(255, 0, 0, ${pulse * 0.4})`;
-                displayCtx.fillRect(rx, ry, rw, rh);
-
-                // Desenho do Gráfico da Onda rPPG
-                graphCtx.fillStyle = '#1a1a1a';
-                graphCtx.fillRect(0, 0, graphCanvas.width, graphCanvas.height);
-                graphCtx.beginPath();
-                graphCtx.strokeStyle = '#25d366';
-                graphCtx.lineWidth = 2;
-                
-                const min = Math.min(...bvpHistory), max = Math.max(...bvpHistory);
-                const range = (max - min) || 1;
-                for (let i = 0; i < bvpHistory.length; i++) {
-                    const x = i;
-                    const y = 150 - ((bvpHistory[i] - min) / range * 110 + 20);
-                    if (i === 0) graphCtx.moveTo(x, y);
-                    else graphCtx.lineTo(x, y);
-                }
-                graphCtx.stroke();
-
-                status.innerText = `Extraindo sinal ${method} (Mantenha o rosto imóvel)`;
-            }
-            requestAnimationFrame(processFrame);
-        }
-
-        startBtn.addEventListener('click', toggleCapture);
-    </script>
 </body>
 </html>
+
