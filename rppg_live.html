@@ -415,7 +415,7 @@ const MOVEMENT_PERCENTAGE_WEIGHT = 0.50;
 
 const MOVEMENT_DISTANCE_WEIGHT = 0.50;
 
-const MOTION_REJECTION_THRESHOLD = 0.75;
+const MOTION_REJECTION_THRESHOLD = 0.3;
 
 
 // ============================================================
@@ -2278,7 +2278,8 @@ function getFrameRate() {
 // ============================================================
 
 function performEstimation(
-    currentTime
+    currentTime,
+    intervalStartTime
 ) {
 
     if (
@@ -2343,6 +2344,90 @@ function performEstimation(
         ).toFixed(0)}%`;
 
 
+    const highMotion =
+        currentMotionIndex >=
+        MOTION_REJECTION_THRESHOLD;
+
+
+    if (highMotion) {
+
+        // Interpolação linear do trecho ruidoso para evitar descontinuidade
+        if (intervalStartTime !== undefined) {
+            let startIndex = signalTimeHistory.length - 1;
+            while (
+                startIndex > 0 &&
+                signalTimeHistory[startIndex - 1] >= intervalStartTime
+            ) {
+                startIndex--;
+            }
+
+            const endIndex = signalTimeHistory.length - 1;
+
+            if (startIndex > 0 && endIndex > startIndex) {
+                const valStartChrom = chromRawHistory[startIndex - 1];
+                const valEndChrom = chromRawHistory[endIndex];
+
+                const valStartPos = posRawHistory[startIndex - 1];
+                const valEndPos = posRawHistory[endIndex];
+
+                const totalSteps = endIndex - (startIndex - 1);
+
+                for (let i = startIndex; i <= endIndex; i++) {
+                    const t = (i - (startIndex - 1)) / totalSteps;
+                    
+                    chromRawHistory[i] = valStartChrom + t * (valEndChrom - valStartChrom);
+                    posRawHistory[i] = valStartPos + t * (valEndPos - valStartPos);
+                }
+            }
+        }
+
+        if (
+            hasPreviousEstimate
+        ) {
+
+            chromHRElement.textContent =
+
+                `${lastChromHR.toFixed(1)} bpm`;
+
+
+            posHRElement.textContent =
+
+                `${lastPosHR.toFixed(1)} bpm`;
+
+
+            statusElement.textContent =
+
+                `High facial motion detected. ` +
+                `Segment linearly interpolated. ` +
+                `Previous HR estimate retained. ` +
+                `Motion index: ` +
+                `${currentMotionIndex.toFixed(2)}.`;
+
+        } else {
+
+            chromHRElement.textContent =
+                "--";
+
+            posHRElement.textContent =
+                "--";
+
+
+            statusElement.textContent =
+
+                `High facial motion detected. ` +
+                `Segment linearly interpolated. ` +
+                `Waiting for a stable segment. ` +
+                `Motion index: ` +
+                `${currentMotionIndex.toFixed(2)}.`;
+        }
+
+
+        drawGraph();
+
+        return;
+    }
+
+
     const chromWindow =
         getLast15Seconds(
 
@@ -2390,58 +2475,6 @@ function performEstimation(
 
             fps
         );
-
-
-    const highMotion =
-        currentMotionIndex >=
-        MOTION_REJECTION_THRESHOLD;
-
-
-    if (highMotion) {
-
-        if (
-            hasPreviousEstimate
-        ) {
-
-            chromHRElement.textContent =
-
-                `${lastChromHR.toFixed(1)} bpm`;
-
-
-            posHRElement.textContent =
-
-                `${lastPosHR.toFixed(1)} bpm`;
-
-
-            statusElement.textContent =
-
-                `High facial motion detected. ` +
-                `Previous HR estimate retained. ` +
-                `Motion index: ` +
-                `${currentMotionIndex.toFixed(2)}.`;
-
-        } else {
-
-            chromHRElement.textContent =
-                "--";
-
-            posHRElement.textContent =
-                "--";
-
-
-            statusElement.textContent =
-
-                `High facial motion detected. ` +
-                `Waiting for a stable segment. ` +
-                `Motion index: ` +
-                `${currentMotionIndex.toFixed(2)}.`;
-        }
-
-
-        drawGraph();
-
-        return;
-    }
 
 
     if (
@@ -3235,12 +3268,17 @@ async function processFrame() {
 
                 ) {
 
+                    const intervalStartTime =
+                        lastEstimationTime;
+
+
                     lastEstimationTime =
                         currentTime;
 
 
                     performEstimation(
-                        currentTime
+                        currentTime,
+                        intervalStartTime
                     );
                 }
             }
